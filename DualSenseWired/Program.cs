@@ -20,6 +20,11 @@ if (declared != DualSenseDescriptors.Configuration.Length || DualSenseDescriptor
     return 1;
 }
 
+// Audio timing must not suffer when another app is in the foreground: no background power
+// throttling (Windows 11 also ignores timer resolution requests of throttled processes).
+Process.GetCurrentProcess().PriorityClass = ProcessPriorityClass.High;
+DisablePowerThrottling();
+
 using var cts = new CancellationTokenSource();
 Console.CancelKeyPress += (_, e) => { e.Cancel = true; cts.Cancel(); };
 
@@ -64,3 +69,24 @@ catch (OperationCanceledException)
 {
 }
 return 0;
+
+static void DisablePowerThrottling()
+{
+    const int ProcessPowerThrottling = 4;
+    const uint ExecutionSpeed = 0x1, IgnoreTimerResolution = 0x4;
+    // PROCESS_POWER_THROTTLING_STATE { Version = 1, ControlMask, StateMask = 0 (= not throttled) }
+    var state = new uint[] { 1, ExecutionSpeed | IgnoreTimerResolution, 0 };
+    var handle = System.Runtime.InteropServices.GCHandle.Alloc(state, System.Runtime.InteropServices.GCHandleType.Pinned);
+    try
+    {
+        if (!SetProcessInformation(Process.GetCurrentProcess().Handle, ProcessPowerThrottling, handle.AddrOfPinnedObject(), 12))
+            Log($"could not disable power throttling: error {System.Runtime.InteropServices.Marshal.GetLastWin32Error()}");
+    }
+    finally
+    {
+        handle.Free();
+    }
+}
+
+[System.Runtime.InteropServices.DllImport("kernel32.dll", SetLastError = true)]
+static extern bool SetProcessInformation(IntPtr process, int infoClass, IntPtr info, int size);

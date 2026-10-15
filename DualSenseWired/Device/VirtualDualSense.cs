@@ -20,6 +20,8 @@ public interface IControllerLink
     void SetFeature(byte[] report);
     /// <summary>One millisecond of audio from the host: 48 frames x 4 channels x 16 bit.</summary>
     void AudioOut(ReadOnlySpan<byte> pcm);
+    /// <summary>The host's volume control for the audio output (master mute and volume in dB).</summary>
+    void SpeakerVolume(bool mute, double decibels);
 }
 
 public sealed class VirtualDualSense : IUsbDevice
@@ -110,8 +112,13 @@ public sealed class VirtualDualSense : IUsbDevice
             await Task.Delay(wait, urb.Cancel);
     }
 
+    int _loggedAudioUrbs;
+
     async Task<UrbResult> AudioOutAsync(Urb urb)
     {
+        if (_loggedAudioUrbs++ < 3)
+            _log($"audio URB: {urb.NumberOfPackets} packets, lengths {string.Join(",", urb.IsoPackets.Take(4).Select(p => p.Length))}, " +
+                 $"{urb.OutData.Length} bytes");
         await PaceIsoAsync(urb);
         var packets = new IsoPacket[urb.IsoPackets.Length];
         int total = 0;
@@ -275,6 +282,7 @@ public sealed class VirtualDualSense : IUsbDevice
             if (request == 0x01)
             {
                 _speakerMute = urb.OutData.Length > 0 && urb.OutData[0] != 0;
+                _link.SpeakerVolume(_speakerMute, _speakerVolume / 256.0);
                 return new UrbResult { ActualLength = urb.OutData.Length };
             }
             return request == 0x81 ? UrbResult.Ok(new[] { (byte)(_speakerMute ? 1 : 0) }) : null;
@@ -294,6 +302,7 @@ public sealed class VirtualDualSense : IUsbDevice
             {
                 if (urb.OutData.Length >= 2)
                     _speakerVolume = BinaryPrimitives.ReadInt16LittleEndian(urb.OutData);
+                _link.SpeakerVolume(_speakerMute, _speakerVolume / 256.0);
                 return new UrbResult { ActualLength = urb.OutData.Length };
             }
             if (v == short.MinValue)

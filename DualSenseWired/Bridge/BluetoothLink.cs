@@ -1,6 +1,6 @@
 // The real controller behind the virtual wired DualSense: a DualSense connected over Bluetooth.
-// Input reports are translated BT 0x31 -> USB 0x01; game output is merged (OutputState) and sent as
-// BT 0x31 at most every MinOutputInterval; feature reports are forwarded where Bluetooth has them.
+// Input reports are translated BT 0x31 -> USB 0x01; game output and the host's audio go to the
+// controller through ControllerStream; feature reports are forwarded where Bluetooth has them.
 // The virtual controller stays while the Bluetooth one is away; it is re-attached when it returns.
 
 using System.Threading.Channels;
@@ -12,7 +12,6 @@ namespace DualSenseWired.Bridge;
 
 public sealed class BluetoothLink : IControllerLink, IDisposable
 {
-    static readonly TimeSpan MinOutputInterval = TimeSpan.FromMilliseconds(8);
     static readonly TimeSpan RescanInterval = TimeSpan.FromSeconds(2);
     static readonly HashSet<ushort> DualSensePids = new() { 0x0CE6, 0x0DF2 };
 
@@ -20,21 +19,19 @@ public sealed class BluetoothLink : IControllerLink, IDisposable
     readonly CancellationTokenSource _cts = new();
     readonly Channel<byte[]> _inputs = Channel.CreateBounded<byte[]>(
         new BoundedChannelOptions(1) { FullMode = BoundedChannelFullMode.DropOldest });
-    readonly OutputState _direct = new();
     readonly OutputState _history = new();     // everything the game set, re-sent after a reconnect
-    readonly SemaphoreSlim _outputSignal = new(0);
+    readonly ControllerStream _stream;
     readonly object _deviceLock = new();
     HidDevice? _device;
     byte[]? _lastInput;
-    int _seq;
     long _btReports, _delivered, _outputs;
     DateTime _lastModeSwitch;
 
     public BluetoothLink(Action<string> log)
     {
         _log = log;
+        _stream = new ControllerStream(log);
         _ = Task.Run(() => ConnectionLoopAsync(_cts.Token));
-        _ = Task.Run(() => OutputLoopAsync(_cts.Token));
         _ = Task.Run(() => StatsLoopAsync(_cts.Token));
     }
 
@@ -74,14 +71,12 @@ public sealed class BluetoothLink : IControllerLink, IDisposable
                 device.GetFeature(DualSenseProtocol.FeatureCalibration);
                 lock (_deviceLock)
                     _device = device;
+                _stream.Device = device;
                 _log($"Bluetooth DualSense connected (input {device.InputReportLength} B, output {device.OutputReportLength} B, " +
                      $"feature {device.FeatureReportLength} B)");
                 var restore = _history.Snapshot();
                 if (restore != null)
-                {
-                    _direct.Update(restore);    // the controller forgot what the game had set
-                    _outputSignal.Release();
-                }
+                    _stream.SubmitOutput(restore);    // the controller forgot what the game had set
                 await ReadLoopAsync(device, ct);
             }
             catch (Exception e) when (e is IOException or OperationCanceledException or System.ComponentModel.Win32Exception)
@@ -92,6 +87,7 @@ public sealed class BluetoothLink : IControllerLink, IDisposable
             }
             finally
             {
+                _stream.Device = null;
                 lock (_deviceLock)
                     _device = null;
                 device.Dispose();
@@ -107,6 +103,7 @@ public sealed class BluetoothLink : IControllerLink, IDisposable
         {
             byte[] report = await device.ReadAsync(ct);
             Interlocked.Increment(ref _btReports);
+            _stream.InputReport(report);
             var usb = DualSenseProtocol.BtInputToUsb(report);
             if (usb != null)
             {
@@ -118,27 +115,6 @@ public sealed class BluetoothLink : IControllerLink, IDisposable
                 // Simple Bluetooth report: ask for the full one again.
                 _lastModeSwitch = DateTime.UtcNow;
                 try { device.GetFeature(DualSenseProtocol.FeatureCalibration); } catch (System.ComponentModel.Win32Exception) { }
-            }
-        }
-    }
-
-    async Task OutputLoopAsync(CancellationToken ct)
-    {
-        while (!ct.IsCancellationRequested)
-        {
-            await _outputSignal.WaitAsync(ct);
-            await Task.Delay(MinOutputInterval, ct);     // merge whatever else arrives meanwhile
-            var device = _device;
-            var common = device != null ? _direct.Take() : null;
-            if (device == null || common == null)
-                continue;
-            try
-            {
-                await device.WriteAsync(DualSenseProtocol.CommonToBt(common, _seq++), ct);
-            }
-            catch (IOException e)
-            {
-                _log($"output to the controller failed: {e.Message}");
             }
         }
     }
@@ -159,8 +135,7 @@ public sealed class BluetoothLink : IControllerLink, IDisposable
         Interlocked.Increment(ref _outputs);
         var common = report.AsSpan(1, Math.Min(DualSenseProtocol.CommonSize, report.Length - 1));
         _history.Update(common);
-        _direct.Update(common);
-        _outputSignal.Release();
+        _stream.SubmitOutput(common);
     }
 
     public byte[]? GetFeature(byte reportId, int length)
@@ -215,9 +190,12 @@ public sealed class BluetoothLink : IControllerLink, IDisposable
         }
     }
 
-    public void AudioOut(ReadOnlySpan<byte> pcm)
+    public void AudioOut(ReadOnlySpan<byte> pcm) => _stream.AudioIn(pcm);
+
+    public void SpeakerVolume(bool mute, double decibels)
     {
-        // Next milestone: Opus speaker audio and HD haptics to the controller.
+        _stream.SpeakerVolume(mute, decibels);
+        _log($"speaker volume {decibels:0.#} dB{(mute ? ", muted" : "")}");
     }
 
     // -- misc --
@@ -251,6 +229,7 @@ public sealed class BluetoothLink : IControllerLink, IDisposable
     public void Dispose()
     {
         _cts.Cancel();
+        _stream.Dispose();
         lock (_deviceLock)
             _device?.Dispose();
     }

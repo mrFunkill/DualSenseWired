@@ -70,6 +70,8 @@ public sealed class TestLink : IControllerLink
             Interlocked.Exchange(ref _audioPeak, peak);
     }
 
+    public void SpeakerVolume(bool mute, double decibels) => _log($"speaker volume {decibels:0.#} dB{(mute ? ", muted" : "")}");
+
     void LogStats()
     {
         long bytes = Interlocked.Exchange(ref _audioBytes, 0);
