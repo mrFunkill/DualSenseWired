@@ -1,7 +1,8 @@
-﻿// Milestone 1: a virtual wired DualSense (HID + USB audio) attached through usbip-win2.
-// Run, then check Device Manager / Sound settings / Steam for "DualSense Wireless Controller".
+﻿// A virtual wired DualSense (HID + USB audio) attached through usbip-win2, backed by the real
+// controller connected over Bluetooth.
 
 using System.Diagnostics;
+using DualSenseWired.Bridge;
 using DualSenseWired.Device;
 using DualSenseWired.UsbIp;
 
@@ -22,7 +23,23 @@ if (declared != DualSenseDescriptors.Configuration.Length || DualSenseDescriptor
 using var cts = new CancellationTokenSource();
 Console.CancelKeyPress += (_, e) => { e.Cancel = true; cts.Cancel(); };
 
-var device = new VirtualDualSense(new TestLink(Log), Log);
+// --test: no real controller, a stand-in that only logs what the host sends.
+IControllerLink link;
+if (args.Contains("--test"))
+{
+    link = new TestLink(Log);
+}
+else
+{
+    using (var found = BluetoothLink.FindController())
+    {
+        if (found == null)
+            Log("no Bluetooth DualSense yet: pair it in Windows Bluetooth settings (hold Create + PS), it will be picked up");
+    }
+    link = new BluetoothLink(Log);
+}
+
+var device = new VirtualDualSense(link, Log);
 var server = new UsbIpServer(device, Log);
 var serverTask = server.RunAsync(cts.Token);
 
