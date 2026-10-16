@@ -55,13 +55,15 @@ public sealed class ControllerStream : IDisposable
     const byte StreamBlockedFlag0 = 0x02;
     const byte StreamBlockedFlag1 = 0x08;
 
-    // ~60 ms queued before playing; the controller keeps its own buffer near TargetLevel.
-    const int Prebuffer = 6;
+    // Audio waits in two places: our queue (Prebuffer frames of 10.7 ms before playing; Windows
+    // delivers it evenly, so little is needed) and the controller's buffer (kept near TargetLevel).
+    // Both add to the delay between the game and the speaker.
+    const int Prebuffer = 2;
     const int MaxQueue = 24;
     // Byte 65 of the Bluetooth input report: how much audio the controller has buffered (ms).
     public const int InputAudioLevelOffset = 65;
-    const int TargetLevel = 48;
-    const int LevelLowMargin = 16;
+    const int TargetLevel = 32;                  // DSX's default is 48 ms
+    const int LevelLowMargin = 12;
     const int LevelHighMargin = 12;              // the controller drops its whole buffer at ~64+
     const double LevelSmoothing = 0.05;
     const int LevelAdjustInterval = 20;          // reports between corrections (~200 ms)
