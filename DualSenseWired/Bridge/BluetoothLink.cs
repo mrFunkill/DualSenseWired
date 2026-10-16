@@ -33,11 +33,53 @@ public sealed class BluetoothLink : IControllerLink, IDisposable
     {
         _log = log;
         _stream = new ControllerStream(log);
+        HidHide.RegisterSelf(log);
         _ = Task.Run(() => ConnectionLoopAsync(_cts.Token));
         _ = Task.Run(() => StatsLoopAsync(_cts.Token));
     }
 
     public bool Connected => _device != null;
+    /// <summary>Audio/haptics stream to the controller (options and state).</summary>
+    public ControllerStream Stream => _stream;
+    /// <summary>Button remapping applied to what games see, or null.</summary>
+    public ButtonMap? ButtonMap { get; set; }
+    /// <summary>USB product ID of the connected controller (0x0CE6 DualSense, 0x0DF2 DualSense Edge).</summary>
+    public ushort? ProductId => _device?.ProductId;
+
+    /// <summary>Pass the games' adaptive trigger effects to the controller.</summary>
+    public bool AdaptiveTriggers
+    {
+        get => _adaptiveTriggers;
+        set
+        {
+            if (_adaptiveTriggers == value)
+                return;
+            _adaptiveTriggers = value;
+            if (!value)
+            {
+                // Release whatever effect is active now: both triggers set to "off".
+                var reset = new byte[DualSenseProtocol.CommonSize];
+                reset[0] = TriggerFlags;
+                _stream.SubmitOutput(reset);
+            }
+            else if (_history.Snapshot() is { } restore)
+                _stream.SubmitOutput(restore);
+        }
+    }
+    bool _adaptiveTriggers = true;
+    const byte TriggerFlags = 0x0C;     // valid_flag0: right (0x04) and left (0x08) trigger effects
+    /// <summary>Battery level 0..100 and charging state from the last input report, if known.</summary>
+    public (int Percent, bool Charging, bool Full)? Battery
+    {
+        get
+        {
+            var r = _lastInput;
+            if (r == null || !Connected)
+                return null;
+            int level = r[53] & 0x0F, status = r[53] >> 4;
+            return (Math.Min(100, level * 10 + 5), status == 1, status == 2);
+        }
+    }
 
     public static HidDevice? FindController()
     {
@@ -90,7 +132,11 @@ public sealed class BluetoothLink : IControllerLink, IDisposable
                      $"feature {device.FeatureReportLength} B)");
                 var restore = _history.Snapshot();
                 if (restore != null)
+                {
+                    if (!_adaptiveTriggers)
+                        restore[0] &= unchecked((byte)~TriggerFlags);
                     _stream.SubmitOutput(restore);    // the controller forgot what the game had set
+                }
                 await ReadLoopAsync(device, ct);
             }
             catch (Exception e) when (e is IOException or OperationCanceledException or System.ComponentModel.Win32Exception)
@@ -121,7 +167,8 @@ public sealed class BluetoothLink : IControllerLink, IDisposable
             var usb = DualSenseProtocol.BtInputToUsb(report);
             if (usb != null)
             {
-                _lastInput = usb;
+                _lastInput = (byte[])usb.Clone();
+                ButtonMap?.Apply(usb);
                 _inputs.Writer.TryWrite(usb);
             }
             else if (report[0] == DualSenseProtocol.UsbInputReport && DateTime.UtcNow - _lastModeSwitch > TimeSpan.FromSeconds(1))
@@ -147,8 +194,10 @@ public sealed class BluetoothLink : IControllerLink, IDisposable
         if (report.Length < 2 || report[0] != DualSenseProtocol.UsbOutputReport)
             return;
         Interlocked.Increment(ref _outputs);
-        var common = report.AsSpan(1, Math.Min(DualSenseProtocol.CommonSize, report.Length - 1));
+        var common = report.AsSpan(1, Math.Min(DualSenseProtocol.CommonSize, report.Length - 1)).ToArray();
         _history.Update(common);
+        if (!_adaptiveTriggers)
+            common[0] &= unchecked((byte)~TriggerFlags);
         _stream.SubmitOutput(common);
     }
 

@@ -12,12 +12,12 @@ public sealed class TestLink : IControllerLink
     long _nextInputTicks;
     byte _counter;
     long _audioBytes, _audioPeak, _outputs;
-    readonly Timer _stats;
+    readonly System.Threading.Timer _stats;
 
     public TestLink(Action<string> log)
     {
         _log = log;
-        _stats = new Timer(_ => LogStats(), null, 5000, 5000);
+        _stats = new System.Threading.Timer(_ => LogStats(), null, 5000, 5000);
     }
 
     public async Task<byte[]> NextInputReportAsync(CancellationToken ct)

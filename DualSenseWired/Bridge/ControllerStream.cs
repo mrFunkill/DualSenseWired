@@ -62,7 +62,7 @@ public sealed class ControllerStream : IDisposable
     const int MaxQueue = 24;
     // Byte 65 of the Bluetooth input report: how much audio the controller has buffered (ms).
     public const int InputAudioLevelOffset = 65;
-    const int TargetLevel = 32;                  // DSX's default is 48 ms
+    public const int DefaultTargetLevel = 32;    // DSX's default is 48 ms
     const int LevelLowMargin = 12;
     const int LevelHighMargin = 12;              // the controller drops its whole buffer at ~64+
     const double LevelSmoothing = 0.05;
@@ -97,6 +97,17 @@ public sealed class ControllerStream : IDisposable
 
     /// <summary>Controller speaker volume (0..0x7F); the host's volume control scales the audio itself.</summary>
     public int Volume { get; set; } = 0x7F * 80 / 100;
+    /// <summary>Play the speaker channels (1-2) on the controller.</summary>
+    public bool SpeakerEnabled { get; set; } = true;
+    /// <summary>Play the haptics channels (3-4) on the controller's actuators.</summary>
+    public bool HapticsEnabled { get; set; } = true;
+    /// <summary>Audio kept buffered in the controller, ms: less delay, more risk of gaps.</summary>
+    public int TargetLevel { get; set; } = DefaultTargetLevel;
+    /// <summary>Audio reports are being sent (there is something to play).</summary>
+    public bool Streaming { get; private set; }
+    public long ReportsSent => Interlocked.Read(ref _reportsSent);
+    public long Underruns => Interlocked.Read(ref _underruns);
+    long _reportsSent;
     /// <summary>Haptics strength, 1 = as the game plays it.</summary>
     public double HapticsGain { get; set; } = 1;
 
@@ -137,14 +148,18 @@ public sealed class ControllerStream : IDisposable
     /// <summary>Host audio, 48 kHz, 4 channels, s16le; resampled to 45 kHz and queued in 480-frame blocks.</summary>
     public void AudioIn(ReadOnlySpan<byte> pcm)
     {
+        if (!SpeakerEnabled && !HapticsEnabled)
+            return;
         var samples = MemoryMarshal.Cast<byte, short>(pcm).ToArray();
         Interlocked.Add(ref _inputFrames, samples.Length / Channels);
-        float gain = _speakerGain;
-        if (gain < 1)
+        float gain = SpeakerEnabled ? _speakerGain : 0;
+        if (gain < 1 || !HapticsEnabled)
             for (int i = 0; i < samples.Length; i += Channels)
             {
                 samples[i] = (short)(samples[i] * gain);
                 samples[i + 1] = (short)(samples[i + 1] * gain);
+                if (!HapticsEnabled)
+                    samples[i + 2] = samples[i + 3] = 0;
             }
         lock (_queueLock)
         {
@@ -261,7 +276,7 @@ public sealed class ControllerStream : IDisposable
                 _opusOut.AsSpan(0, n).CopyTo(opus);
             }
         }
-        if (hapticsSignal)
+        if (hapticsSignal && HapticsEnabled)
         {
             double gain = HapticsGain / 32768.0 * 127;
             for (int ch = 0; ch < 2; ch++)
@@ -399,6 +414,7 @@ public sealed class ControllerStream : IDisposable
                 Write(device, BuildReport(0x32, _seq++, (SubSettings, new[] { Settings() }), (SubHaptics, new[] { new byte[HapticsBlock] })));
             }
             streaming = !idle;
+            Streaming = streaming;
 
             double late = now.TotalSeconds - (start + tick * Period);
             if (late > ResyncLateness)
@@ -433,6 +449,7 @@ public sealed class ControllerStream : IDisposable
                 _seq++;
                 doubles++;
                 sent++;
+                Interlocked.Increment(ref _reportsSent);
             }
             else
             {
@@ -441,6 +458,7 @@ public sealed class ControllerStream : IDisposable
                                           (SubOpus, new[] { opus }), (SubHaptics, new[] { haptics })));
                 _seq++;
                 sent++;
+                Interlocked.Increment(ref _reportsSent);
             }
 
             if (now >= nextStats)

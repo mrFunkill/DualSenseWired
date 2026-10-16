@@ -17,6 +17,16 @@ public static class HidHide
 
     public static string? CliPath => CliPaths.FirstOrDefault(File.Exists);
 
+    /// <summary>
+    /// Allow this program to see hidden devices. Done at start: a controller left hidden by an
+    /// earlier run (crash, kill, or the program moved) would otherwise be invisible to us too.
+    /// </summary>
+    public static void RegisterSelf(Action<string> log)
+    {
+        if (CliPath is { } cli)
+            Run(cli, $"--app-reg \"{Environment.ProcessPath}\" --app-clean", log);
+    }
+
     /// <summary>Hide the device from everyone but this program; true if it is hidden now.</summary>
     public static bool Hide(string instanceId, Action<string> log)
     {
@@ -61,8 +71,16 @@ public static class HidHide
                 RedirectStandardError = true,
                 CreateNoWindow = true,
             })!;
-            string output = process.StandardOutput.ReadToEnd() + process.StandardError.ReadToEnd();
-            process.WaitForExit();
+            var stdout = process.StandardOutput.ReadToEndAsync();
+            var stderr = process.StandardError.ReadToEndAsync();
+            // HidHide's client has been seen to hang (run without administrator rights): never block for good.
+            if (!process.WaitForExit(15000))
+            {
+                process.Kill();
+                log($"{Path.GetFileName(exe)} {arguments}: no answer, stopped");
+                return false;
+            }
+            string output = stdout.Result + stderr.Result;
             if (process.ExitCode != 0)
             {
                 log($"{Path.GetFileName(exe)} {arguments}: exit {process.ExitCode} {output.Trim()}");

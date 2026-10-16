@@ -1,0 +1,713 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DualSense Wired</title>
+<style>
+:root{
+  --bg:#f3f3f3; --surface:#fbfbfb; --card:#ffffff; --border:#e5e5e5;
+  --text:#1b1b1b; --muted:#616161; --faint:#8a8a8a;
+  --accent:#005fb8; --accent-soft:#e6f0fa; --track:#d1d1d1;
+  --ok:#0f7b0f; --warn:#b06a00; --danger:#c42b1c;
+  --nav-active:#eaeaea;
+  --stage:#eef1f5; --pad-line:#7d8592; --pad-hl:#005fb8;
+  --tri:#1a9e9a; --cir:#d23c5c; --crs:#4a78c8; --sqr:#b45ab4;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#202020; --surface:#272727; --card:#2c2c2c; --border:#3a3a3a;
+    --text:#f3f3f3; --muted:#c5c5c5; --faint:#9a9a9a;
+    --accent:#60cdff; --accent-soft:#1f3a4a; --track:#5a5a5a;
+    --ok:#6ccb5f; --warn:#fce100; --danger:#ff99a4;
+    --nav-active:#2d2d2d;
+    --stage:#0f141b; --pad-line:#8f99a8; --pad-hl:#60cdff;
+    --tri:#3fd0c9; --cir:#f06e8a; --crs:#8fb3ff; --sqr:#e19be1;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#202020; --surface:#272727; --card:#2c2c2c; --border:#3a3a3a;
+  --text:#f3f3f3; --muted:#c5c5c5; --faint:#9a9a9a;
+  --accent:#60cdff; --accent-soft:#1f3a4a; --track:#5a5a5a;
+  --ok:#6ccb5f; --warn:#fce100; --danger:#ff99a4;
+  --nav-active:#2d2d2d;
+  --stage:#0f141b; --pad-line:#8f99a8; --pad-hl:#60cdff;
+  --tri:#3fd0c9; --cir:#f06e8a; --crs:#8fb3ff; --sqr:#e19be1;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{background:var(--surface);color:var(--text);font:14px/1.45 "Segoe UI Variable Text","Segoe UI",system-ui,sans-serif;user-select:none}
+button{font:inherit}
+.window{height:100%;display:flex;flex-direction:column}
+.body{display:flex;flex:1;min-height:0}
+nav{width:220px;padding:8px;display:flex;flex-direction:column;gap:2px;flex-shrink:0}
+nav button{all:unset;display:flex;align-items:center;gap:12px;padding:9px 12px;border-radius:5px;cursor:pointer;color:var(--text);position:relative}
+nav button:hover{background:var(--nav-active)}
+nav button.active{background:var(--nav-active);font-weight:600}
+nav button.active::before{content:"";position:absolute;left:0;top:10px;bottom:10px;width:3px;border-radius:2px;background:var(--accent)}
+nav svg{width:18px;height:18px;flex-shrink:0}
+nav .foot{margin-top:auto;padding:12px;font-size:12px;color:var(--faint);display:flex;flex-direction:column;gap:6px;align-items:flex-start}
+.linkbtn{all:unset;cursor:pointer;color:var(--faint);font-size:12px;padding:2px 0}
+.linkbtn:hover{color:var(--text)}
+main{flex:1;padding:8px 32px 32px;overflow:auto;min-width:0}
+h1{font:600 28px/1.2 "Segoe UI Variable Display","Segoe UI",sans-serif;margin:8px 0 20px;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+h1 .crumb{color:var(--faint);cursor:pointer;font-weight:600}
+h1 .crumb:hover{color:var(--text)}
+h1 .sep{color:var(--faint);font-weight:400}
+.page{display:none}.page.active{display:block}
+.card{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:16px 20px;margin-bottom:8px}
+.muted{color:var(--muted)}
+.notice{border-color:color-mix(in srgb,var(--warn) 45%,var(--border));color:var(--text)}
+.notice b{color:var(--warn)}
+
+.check{display:inline-flex;align-items:center;gap:10px;cursor:pointer;user-select:none}
+.check input{appearance:none;width:18px;height:18px;margin:0;border:1px solid var(--faint);border-radius:4px;background:var(--card);display:grid;place-items:center;cursor:pointer;flex-shrink:0}
+.check input:checked{background:var(--accent);border-color:var(--accent)}
+.check input:checked::after{content:"";width:9px;height:5px;border:2px solid var(--card);border-top:0;border-right:0;transform:translateY(-1px) rotate(-45deg)}
+.check input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+.hero{display:flex;align-items:center;gap:16px;padding:20px}
+.hero .ico{width:44px;height:44px;border-radius:10px;background:var(--accent-soft);color:var(--accent);display:grid;place-items:center;flex-shrink:0}
+.hero .txt{flex:1;min-width:0}
+.hero .title{font-size:16px;font-weight:600}
+.state{display:inline-flex;align-items:center;gap:6px;font-size:12px;padding:2px 8px;border-radius:10px;margin-top:4px}
+.state .dot{width:7px;height:7px;border-radius:50%;background:currentColor}
+.state.on{color:var(--ok);background:color-mix(in srgb,var(--ok) 12%,transparent)}
+.state.wait{color:var(--warn);background:color-mix(in srgb,var(--warn) 12%,transparent)}
+.state.off{color:var(--faint);background:color-mix(in srgb,var(--faint) 14%,transparent)}
+.hero .check{font-size:15px;font-weight:600}
+
+.device{display:flex;align-items:center;gap:28px;flex-wrap:wrap;padding:18px 20px}
+.device .id{flex:1;min-width:180px}
+.eyebrow{font-size:12px;color:var(--faint);text-transform:uppercase;letter-spacing:.06em}
+.model{font:600 22px/1.2 "Segoe UI Variable Display","Segoe UI",sans-serif}
+.model-sub{color:var(--muted);font-size:13px;margin-top:2px}
+.battery{display:flex;align-items:center;gap:12px}
+.batt-shell{width:46px;height:22px;border:2px solid var(--muted);border-radius:5px;padding:2px;position:relative}
+.batt-shell::after{content:"";position:absolute;right:-6px;top:5px;width:3px;height:8px;border-radius:0 2px 2px 0;background:var(--muted)}
+.batt-fill{height:100%;border-radius:2px;background:var(--ok);transition:width .4s}
+.batt-pct{font-size:20px;font-weight:600;line-height:1.1}
+.batt-note{font-size:12px;color:var(--muted)}
+.stat .v{font-weight:600}
+.btn{appearance:none;border:1px solid var(--border);background:var(--card);color:var(--text);padding:7px 16px;border-radius:5px;cursor:pointer;display:inline-flex;align-items:center;gap:8px}
+.btn:hover{background:var(--nav-active)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--card);font-weight:600}
+.btn.primary:hover{filter:brightness(1.08)}
+.btn svg{width:16px;height:16px}
+
+.stage{background:var(--stage);border-radius:8px;padding:28px 16px;position:relative}
+.stage-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px;flex-wrap:wrap}
+.stage-head .t{font-weight:600}
+.layout{display:grid;grid-template-columns:minmax(170px,1fr) minmax(260px,1.5fr) minmax(170px,1fr);align-items:center;gap:8px}
+.layout svg.pad{width:100%;height:auto;display:block}
+.col{display:flex;flex-direction:column;gap:2px}
+.col.left{align-items:flex-end}
+.col.right{align-items:flex-start}
+.grp{white-space:nowrap;font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--faint);margin:12px 0 2px;padding:0 6px}
+.bind{all:unset;display:flex;align-items:center;gap:10px;padding:4px 6px;border-radius:5px;font-size:14px;white-space:nowrap;color:var(--text);max-width:100%}
+.col.left .bind{flex-direction:row-reverse}
+.bind .act{overflow:hidden;text-overflow:ellipsis}
+.bind.def .act{color:var(--faint)}
+.bind.off .act{color:var(--danger);text-decoration:line-through}
+.bind.tp{font-size:13px}
+.col.left .bind.tp{padding-right:38px}
+.col.right .bind.tp{padding-left:38px}
+.bind .bdg{width:26px;height:20px;flex-shrink:0;display:grid;place-items:center}
+.bind .bdg svg{width:26px;height:20px;display:block}
+.editable .bind{cursor:pointer}
+.editable .bind:hover,.bind.hl{background:color-mix(in srgb,var(--pad-hl) 14%,transparent)}
+.editable .bind:focus-visible{outline:2px solid var(--accent)}
+.bind.picked{background:color-mix(in srgb,var(--pad-hl) 22%,transparent);box-shadow:inset 0 0 0 1px var(--pad-hl)}
+.bind.live .bdg{filter:drop-shadow(0 0 3px var(--pad-hl))}
+
+.pad .ln{fill:none;stroke:var(--pad-line);stroke-width:1.4;stroke-linejoin:round;stroke-linecap:round}
+.pad .hot{transition:stroke .15s, fill .15s;fill:transparent}
+.pad .hot.hl{stroke:var(--pad-hl);stroke-width:2.2;fill:color-mix(in srgb,var(--pad-hl) 14%,transparent)}
+.pad .tri{stroke:var(--tri)} .pad .cir{stroke:var(--cir)} .pad .crs{stroke:var(--crs)} .pad .sqr{stroke:var(--sqr)}
+.pad .dots circle{fill:none;stroke:var(--pad-line);stroke-width:1}
+.pad text{fill:var(--pad-line);font:700 15px "Segoe UI",sans-serif}
+
+.legend{display:flex;gap:16px;align-items:center;font-size:12px;color:var(--faint);flex-wrap:wrap}
+.legend i{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;vertical-align:middle}
+
+.section{padding:18px 20px}
+.sub{margin-top:16px}
+.sub.off{opacity:.4;pointer-events:none}
+.label{margin-bottom:8px}
+.slider{position:relative;height:28px;max-width:300px}
+.slider input{position:absolute;inset:0;width:100%;margin:0;appearance:none;background:transparent;cursor:pointer;z-index:2}
+.slider .rail{position:absolute;left:0;right:0;top:9px;height:4px;border-radius:2px;background:var(--track)}
+.slider .fill{position:absolute;left:0;top:9px;height:4px;border-radius:2px;background:var(--accent)}
+.slider .ticks{position:absolute;left:6px;right:6px;top:20px;height:6px;display:flex;justify-content:space-between;pointer-events:none}
+.slider .ticks i{width:1px;height:6px;background:var(--faint);opacity:.7}
+.slider input::-webkit-slider-runnable-track{height:22px;background:transparent}
+.slider input::-webkit-slider-thumb{appearance:none;width:12px;height:20px;border-radius:3px 3px 6px 6px;background:var(--accent);border:0;margin-top:1px;box-shadow:0 0 0 2px var(--card)}
+.slider input:focus-visible{outline:none}
+.slider input:focus-visible::-webkit-slider-thumb{box-shadow:0 0 0 2px var(--card),0 0 0 4px var(--accent)}
+.hint{font-size:13px;color:var(--faint);margin-top:10px}
+.row-head{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.row-head .desc{font-size:12px;color:var(--faint);margin-top:2px}
+.save-bar{display:flex;gap:8px;justify-content:flex-end;margin-top:16px}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+
+.scrim{position:fixed;inset:0;background:rgba(0,0,0,.45);display:none;align-items:center;justify-content:center;padding:16px;z-index:10}
+.scrim.open{display:flex}
+.dialog{background:var(--surface);border:1px solid var(--border);border-radius:8px;width:100%;max-width:560px;max-height:90vh;display:flex;flex-direction:column;box-shadow:0 16px 48px rgba(0,0,0,.35)}
+.dialog header{padding:20px 24px 4px;display:flex;align-items:center;gap:12px}
+.dialog header .bdg svg{width:34px;height:26px}
+.dialog h2{margin:0;font-size:20px;font-weight:600}
+.dialog .cur{font-size:13px;color:var(--muted)}
+.dialog .content{padding:12px 24px 16px;overflow:auto}
+.dialog footer{padding:16px 24px;background:var(--card);border-top:1px solid var(--border);display:flex;gap:8px;border-radius:0 0 8px 8px;flex-wrap:wrap}
+.chips{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:6px}
+.chip{border:1px solid var(--border);background:var(--card);color:var(--text);border-radius:5px;padding:8px 10px;cursor:pointer;text-align:left;display:flex;align-items:center;gap:8px}
+.chip svg{width:22px;height:17px;flex-shrink:0}
+.chip:hover{background:var(--nav-active)}
+.chip.on{border-color:var(--accent);background:var(--accent-soft);font-weight:600}
+
+@media (max-width:1000px){
+  .layout{grid-template-columns:1fr 1fr}
+  .layout svg.pad{grid-column:1 / -1;order:-1;max-width:460px;margin:0 auto 8px}
+  .col.left,.col.right{align-items:stretch}
+  .col.left .bind{flex-direction:row}
+  .col.left .bind.tp{padding-right:6px;padding-left:38px}
+  .bind{white-space:normal}
+}
+@media (max-width:760px){
+  .body{flex-direction:column}
+  nav{width:auto;flex-direction:row;overflow-x:auto;padding:4px 16px}
+  nav .foot{display:none}
+  nav button.active::before{left:12px;right:12px;top:auto;bottom:0;width:auto;height:3px}
+  main{padding:8px 16px 24px}
+  .hero{flex-wrap:wrap}
+  .layout{grid-template-columns:1fr}
+  .two{grid-template-columns:1fr}
+  .stage{padding:16px 8px}
+}
+</style>
+</head>
+<body>
+<div class="window">
+  <div class="body">
+    <nav>
+      <button class="active" data-page="home">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></svg>
+        <span data-t="navHome"></span>
+      </button>
+      <button data-page="settings">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/></svg>
+        <span data-t="navSettings"></span>
+      </button>
+      <div class="foot">
+        <button class="linkbtn" id="themeBtn">◐ <span data-t="theme"></span></button>
+        <button class="linkbtn" id="logBtn" data-t="openLog"></button>
+        <span id="version"></span>
+      </div>
+    </nav>
+
+    <main>
+      <!-- HOME -->
+      <section class="page active" id="page-home">
+        <h1 data-t="navHome"></h1>
+
+        <div class="card notice" id="hidhideNotice" hidden><b>!</b> <span data-t="hidhideMissing"></span></div>
+
+        <div class="card hero">
+          <div class="ico">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M7 7h10M12 3v4M8 21h8M12 17v4"/><rect x="5" y="7" width="14" height="10" rx="2"/></svg>
+          </div>
+          <div class="txt">
+            <div class="title" data-t="emulation"></div>
+            <div class="muted" style="font-size:13px" data-t="emulationDesc"></div>
+            <span class="state off" id="emuState"><span class="dot"></span><span id="emuStateText"></span></span>
+          </div>
+          <label class="check"><input type="checkbox" id="emuToggle"> <span data-t="emulationShort"></span></label>
+        </div>
+
+        <div class="card device">
+          <div class="id">
+            <div class="eyebrow" data-t="connectedPad"></div>
+            <div class="model" id="model"></div>
+            <div class="model-sub" id="modelSub"></div>
+          </div>
+          <div class="battery" id="battery" hidden>
+            <div class="batt-shell"><div class="batt-fill" id="battFill"></div></div>
+            <div><div class="batt-pct" id="battPct"></div><div class="batt-note" id="battNote"></div></div>
+          </div>
+          <div class="stat" id="audioStat" hidden><div class="eyebrow" data-t="audioState"></div><div class="v" id="audioText"></div></div>
+        </div>
+
+        <div class="card" style="padding:16px">
+          <div class="stage-head">
+            <div>
+              <div class="t" data-t="layout"></div>
+              <div class="muted" style="font-size:13px" id="layoutSummary"></div>
+            </div>
+            <button class="btn primary" data-goto="controls">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>
+              <span data-t="editLayout"></span>
+            </button>
+          </div>
+          <div class="stage"><div class="layout" id="homeLayout"></div></div>
+        </div>
+      </section>
+
+      <!-- CONTROLS -->
+      <section class="page" id="page-controls">
+        <h1><span class="crumb" data-goto="home" data-t="navHome"></span><span class="sep">›</span><span data-t="editLayout"></span></h1>
+
+        <div class="card" style="padding:16px">
+          <div class="stage-head">
+            <button class="btn" id="resetAll" data-t="resetAll"></button>
+            <div class="legend"><span><i style="background:var(--text)"></i><span data-t="legendRemapped"></span></span><span><i style="background:var(--faint)"></i><span data-t="legendDefault"></span></span></div>
+          </div>
+          <div class="stage editable"><div class="layout" id="editLayout"></div></div>
+          <div class="hint" data-t="layoutHint"></div>
+        </div>
+
+        <div class="two">
+          <div class="card section">
+            <div class="label"><span data-t="dzLeft"></span>: <span id="dzlVal"></span></div>
+            <div class="slider" data-ticks="6"><div class="rail"></div><div class="fill"></div><div class="ticks"></div><input type="range" id="dzl" min="0" max="25" value="0" data-setting="DeadzoneLeft"></div>
+            <div class="label" style="margin-top:14px"><span data-t="dzRight"></span>: <span id="dzrVal"></span></div>
+            <div class="slider" data-ticks="6"><div class="rail"></div><div class="fill"></div><div class="ticks"></div><input type="range" id="dzr" min="0" max="25" value="0" data-setting="DeadzoneRight"></div>
+          </div>
+          <div class="card section">
+            <label class="check"><input type="checkbox" id="invY" data-setting="InvertRightY"> <span data-t="invertY"></span></label>
+            <div class="hint" data-t="steamInputHint"></div>
+          </div>
+        </div>
+
+        <div class="save-bar">
+          <button class="btn primary" data-goto="home" data-t="done"></button>
+        </div>
+      </section>
+
+      <!-- SETTINGS -->
+      <section class="page" id="page-settings">
+        <h1 data-t="navSettings"></h1>
+
+        <div class="card section">
+          <label class="check"><input type="checkbox" id="spkToggle" data-setting="Speaker"> <span data-t="speaker"></span></label>
+          <div class="sub" id="spkSub">
+            <div class="label"><span data-t="volume"></span>: <span id="volVal"></span></div>
+            <div class="slider" data-ticks="11"><div class="rail"></div><div class="fill"></div><div class="ticks"></div>
+              <input type="range" id="vol" min="0" max="100" step="5" value="80" data-setting="Volume"></div>
+          </div>
+        </div>
+
+        <div class="card section">
+          <label class="check"><input type="checkbox" id="vibToggle" data-setting="Haptics"> <span data-t="haptics"></span></label>
+          <div class="sub" id="vibSub">
+            <div class="label"><span data-t="hapticsGain"></span>: <span id="vibVal"></span></div>
+            <div class="slider" data-ticks="7"><div class="rail"></div><div class="fill"></div><div class="ticks"></div>
+              <input type="range" id="vib" min="0" max="300" step="10" value="100" data-setting="HapticsGain"></div>
+          </div>
+        </div>
+
+        <div class="card section">
+          <div class="label"><span data-t="buffer"></span>: <span id="bufVal"></span></div>
+          <div class="slider" data-ticks="6"><div class="rail"></div><div class="fill"></div><div class="ticks"></div>
+            <input type="range" id="buf" min="0" max="5" step="1" value="2"></div>
+          <div class="hint" data-t="bufferHint"></div>
+          <div class="hint" data-t="audioHint"></div>
+        </div>
+
+        <div class="card section">
+          <div class="row-head">
+            <div><div data-t="triggers"></div><div class="desc" data-t="triggersDesc"></div></div>
+            <label class="check"><input type="checkbox" id="trgToggle" data-setting="AdaptiveTriggers"></label>
+          </div>
+        </div>
+        <div class="card section">
+          <div class="row-head">
+            <div><div data-t="lowBattery"></div><div class="desc" data-t="lowBatteryDesc"></div></div>
+            <label class="check"><input type="checkbox" id="lowBat" data-setting="LowBatteryNotifications"></label>
+          </div>
+        </div>
+        <div class="card section">
+          <div class="row-head">
+            <div><div data-t="autostart"></div><div class="desc" data-t="autostartDesc"></div></div>
+            <label class="check"><input type="checkbox" id="autostart"></label>
+          </div>
+        </div>
+
+        <div class="save-bar">
+          <button class="btn" id="resetSettings" data-t="reset"></button>
+        </div>
+      </section>
+    </main>
+  </div>
+</div>
+
+<!-- action picker -->
+<div class="scrim" id="pick" role="dialog" aria-modal="true" aria-labelledby="pickTitle">
+  <div class="dialog">
+    <header>
+      <span class="bdg" id="pickBadge"></span>
+      <div><h2 id="pickTitle"></h2><div class="cur"><span data-t="current"></span>: <span id="pickCur"></span></div></div>
+    </header>
+    <div class="content"><div class="chips" id="chips"></div></div>
+    <footer>
+      <button class="btn" id="pickDefault" data-t="asPad"></button>
+      <button class="btn" id="pickNone" data-t="disable"></button>
+      <span style="flex:1"></span>
+      <button class="btn" id="pickClose" data-t="close"></button>
+    </footer>
+  </div>
+</div>
+
+<script>
+const $ = s => document.querySelector(s);
+
+/* ---------- strings ---------- */
+const STR = {
+  en: {
+    navHome:'Home', navSettings:'Emulation settings', theme:'Theme', openLog:'Open log',
+    emulation:'Wired connection emulation', emulationShort:'Emulation',
+    emulationDesc:'Games see the controller as connected over USB: adaptive triggers, HD haptics and the speaker work.',
+    stateActive:'Active', stateWaiting:'Waiting for the controller', stateOff:'Off',
+    connectedPad:'Connected controller', noPad:'No controller',
+    noPadSub:'Pair the DualSense in Windows Bluetooth settings (hold Create + PS)',
+    viaEmulation:'Emulated as USB', viaBluetooth:'Plain Bluetooth',
+    charging:'Charging', full:'Charged', discharging:'On battery',
+    audioState:'Audio', audioPlaying:'Playing', audioIdle:'Silent',
+    layout:'Button layout', editLayout:'Edit layout', layoutDefault:'As on the controller',
+    layoutChanged:n=>`${n} input${n==1?'':'s'} changed`,
+    resetAll:'Reset all', legendRemapped:'Remapped', legendDefault:'As on the controller',
+    layoutHint:'Click a label to pick what the input does. Hovering highlights it on the controller.',
+    dzLeft:'Left stick dead zone', dzRight:'Right stick dead zone', invertY:'Invert right stick Y axis',
+    steamInputHint:'Applies to all games. Steam Input can also change the layout for each game separately.',
+    done:'Done',
+    speaker:'Controller speaker', volume:'Volume', haptics:'Haptics', hapticsGain:'Haptics strength',
+    buffer:'Controller audio buffer', bufferHint:'Less: less delay. More: fewer dropouts on a busy Bluetooth link.',
+    audioHint:'Games send speaker sounds and HD haptics to "DualSense Wireless Controller" by themselves. Keep your speakers or headphones as the default Windows device.',
+    triggers:'Adaptive triggers', triggersDesc:'Pass L2/R2 resistance effects from games',
+    lowBattery:'Low battery warnings', lowBatteryDesc:'A notification at 20% and 10%',
+    autostart:'Start with Windows', autostartDesc:'The app starts in the tray',
+    reset:'Reset', current:'Now', asPad:'As on the controller', disable:'Disable', close:'Close', disabled:'Disabled',
+    hidhideMissing:'HidHide is not installed: Steam and games also see the Bluetooth controller.',
+    groupDpad:'D-pad',
+    names:{Cross:'Cross',Circle:'Circle',Square:'Square',Triangle:'Triangle',Up:'Up',Down:'Down',Left:'Left',Right:'Right',
+      L1:'L1',R1:'R1',L2:'L2',R2:'R2',L3:'L3',R3:'R3',Create:'Create',Options:'Options',PS:'PS',Touchpad:'Touchpad click',Mute:'Mute',
+      LeftStick:'Left stick',RightStick:'Right stick'},
+    dpadNames:{Up:'D-pad up',Down:'D-pad down',Left:'D-pad left',Right:'D-pad right'},
+  },
+  ru: {
+    navHome:'Главная', navSettings:'Настройки эмуляции', theme:'Тема', openLog:'Открыть журнал',
+    emulation:'Эмуляция проводного подключения', emulationShort:'Эмуляция',
+    emulationDesc:'Игры видят геймпад как подключённый по USB: работают адаптивные триггеры, тактильная отдача и динамик.',
+    stateActive:'Активна', stateWaiting:'Ожидание геймпада', stateOff:'Выключена',
+    connectedPad:'Подключённый геймпад', noPad:'Геймпад не найден',
+    noPadSub:'Подключите DualSense в настройках Bluetooth Windows (зажмите Create + PS)',
+    viaEmulation:'Эмуляция USB', viaBluetooth:'Обычный Bluetooth',
+    charging:'Заряжается', full:'Заряжен', discharging:'От батареи',
+    audioState:'Звук', audioPlaying:'Играет', audioIdle:'Тишина',
+    layout:'Раскладка управления', editLayout:'Настроить управление', layoutDefault:'Как на геймпаде',
+    layoutChanged:n=>`Изменено: ${n}`,
+    resetAll:'Сбросить всё', legendRemapped:'Переназначено', legendDefault:'Как на геймпаде',
+    layoutHint:'Нажмите на подпись кнопки, чтобы выбрать действие. При наведении кнопка подсвечивается на геймпаде.',
+    dzLeft:'Мёртвая зона левого стика', dzRight:'Мёртвая зона правого стика', invertY:'Инвертировать ось Y правого стика',
+    steamInputHint:'Действует во всех играх. В Steam Input раскладку можно менять для каждой игры отдельно.',
+    done:'Готово',
+    speaker:'Динамик контроллера', volume:'Громкость', haptics:'Вибрация', hapticsGain:'Сила вибрации',
+    buffer:'Буфер звука в контроллере', bufferHint:'Меньше — меньше задержка, больше — меньше прерываний звука.',
+    audioHint:'Игры сами выводят звуки динамика и HD-вибрацию на «DualSense Wireless Controller». Устройством по умолчанию в Windows оставьте колонки или наушники.',
+    triggers:'Адаптивные триггеры', triggersDesc:'Передавать эффекты сопротивления L2/R2 из игры',
+    lowBattery:'Предупреждать о низком заряде', lowBatteryDesc:'Уведомление при 20% и 10%',
+    autostart:'Запускать вместе с Windows', autostartDesc:'Приложение запустится в трее',
+    reset:'Сбросить', current:'Сейчас', asPad:'Как на геймпаде', disable:'Отключить', close:'Закрыть', disabled:'Отключено',
+    hidhideMissing:'HidHide не установлен: Steam и игры видят и Bluetooth-геймпад.',
+    groupDpad:'Крестовина',
+    names:{Cross:'Крест',Circle:'Круг',Square:'Квадрат',Triangle:'Треугольник',Up:'Вверх',Down:'Вниз',Left:'Влево',Right:'Вправо',
+      L1:'L1',R1:'R1',L2:'L2',R2:'R2',L3:'L3',R3:'R3',Create:'Create',Options:'Options',PS:'PS',Touchpad:'Нажатие тачпада',Mute:'Mute',
+      LeftStick:'Левый стик',RightStick:'Правый стик'},
+    dpadNames:{Up:'Крестовина вверх',Down:'Крестовина вниз',Left:'Крестовина влево',Right:'Крестовина вправо'},
+  },
+};
+let T = STR.en;
+function translate(){
+  document.querySelectorAll('[data-t]').forEach(e=>{const v=T[e.dataset.t]; if(typeof v==='string') e.textContent=v;});
+}
+
+/* ---------- host bridge ---------- */
+const host = window.chrome && window.chrome.webview;
+const send = msg => host && host.postMessage(msg);
+
+/* ---------- controller outline ---------- */
+const PAD_SVG = `
+<svg class="pad" viewBox="0 0 560 390">
+  <path class="ln" d="M150 66 C175 56 198 56 214 62 L346 62 C362 56 385 56 410 66 C452 78 476 104 492 150 C512 210 532 282 540 330 C546 364 528 382 504 380 C484 378 472 366 460 344 L428 284 C418 266 404 256 384 254 L176 254 C156 256 142 266 132 284 L100 344 C88 366 76 378 56 380 C32 382 14 364 20 330 C28 282 48 210 68 150 C84 104 108 78 150 66 Z"/>
+  <path class="ln" opacity=".45" d="M96 340 C80 320 70 290 74 250"/>
+  <path class="ln" opacity=".45" d="M464 340 C480 320 490 290 486 250"/>
+  <path id="el-L1" class="ln hot" d="M128 58 C150 44 186 42 206 50 L208 60 C188 54 160 56 136 66 Z"/>
+  <path id="el-R1" class="ln hot" d="M432 58 C410 44 374 42 354 50 L352 60 C372 54 400 56 424 66 Z"/>
+  <path id="el-L2" class="ln hot" d="M140 46 C150 26 180 22 198 30 L202 44 C180 38 156 40 140 46 Z"/>
+  <path id="el-R2" class="ln hot" d="M420 46 C410 26 380 22 362 30 L358 44 C380 38 404 40 420 46 Z"/>
+  <path id="el-Touchpad" class="ln hot" d="M214 64 L346 64 L340 140 C339 150 332 156 322 156 L238 156 C228 156 221 150 220 140 Z"/>
+  <rect id="el-Create" class="ln hot" x="196" y="78" width="9" height="22" rx="4.5"/>
+  <rect id="el-Options" class="ln hot" x="355" y="78" width="9" height="22" rx="4.5"/>
+  <path id="el-Up" class="ln hot" d="M128 104 h20 v20 l-10 10 l-10 -10 z"/>
+  <path id="el-Down" class="ln hot" d="M128 166 h20 v-20 l-10 -10 l-10 10 z"/>
+  <path id="el-Left" class="ln hot" d="M106 125 v20 h20 l10 -10 l-10 -10 z"/>
+  <path id="el-Right" class="ln hot" d="M170 125 v20 h-20 l-10 -10 l10 -10 z"/>
+  <g id="el-Triangle"><circle class="ln hot" cx="422" cy="106" r="16"/><path class="ln tri" d="M413 112 L422 97 L431 112 Z"/></g>
+  <g id="el-Square"><circle class="ln hot" cx="390" cy="138" r="16"/><rect class="ln sqr" x="382" y="130" width="16" height="16"/></g>
+  <g id="el-Circle"><circle class="ln hot" cx="454" cy="138" r="16"/><circle class="ln cir" cx="454" cy="138" r="8"/></g>
+  <g id="el-Cross"><circle class="ln hot" cx="422" cy="170" r="16"/><path class="ln crs" d="M415 163 L429 177 M429 163 L415 177"/></g>
+  <g id="el-LeftStick"><circle class="ln hot" cx="196" cy="214" r="34"/><circle class="ln" cx="196" cy="214" r="28" opacity=".5"/></g>
+  <circle id="el-L3" class="ln hot" cx="196" cy="214" r="18"/>
+  <g id="el-RightStick"><circle class="ln hot" cx="364" cy="214" r="34"/><circle class="ln" cx="364" cy="214" r="28" opacity=".5"/></g>
+  <circle id="el-R3" class="ln hot" cx="364" cy="214" r="18"/>
+  <g class="dots">
+    <circle cx="262" cy="170" r="2.6"/><circle cx="271" cy="170" r="2.6"/><circle cx="280" cy="170" r="2.6"/><circle cx="289" cy="170" r="2.6"/><circle cx="298" cy="170" r="2.6"/>
+    <circle cx="266.5" cy="178" r="2.6"/><circle cx="275.5" cy="178" r="2.6"/><circle cx="284.5" cy="178" r="2.6"/><circle cx="293.5" cy="178" r="2.6"/>
+  </g>
+  <g id="el-PS"><circle class="ln hot" cx="280" cy="208" r="14"/><text x="280" y="213" text-anchor="middle" style="font-size:11px">PS</text></g>
+  <rect id="el-Mute" class="ln hot" x="266" y="232" width="28" height="7" rx="3.5"/>
+</svg>`;
+
+/* ---------- badges ---------- */
+function badge(t){
+  const w = inner=>`<svg viewBox="0 0 26 20">${inner}</svg>`;
+  const fg='var(--text)', bg='var(--stage)';
+  const txt=(s,y,size=8,fill=bg)=>`<text x="13" y="${y}" text-anchor="middle" font-size="${size}" font-weight="700" fill="${fill}" font-family="Segoe UI,sans-serif">${s}</text>`;
+  const dpad=arm=>{
+    const arms={Up:'M10 1 h6 v7 h-6 z',Down:'M10 12 h6 v7 h-6 z',Left:'M3 7 h7 v6 h-7 z',Right:'M16 7 h7 v6 h-7 z'};
+    return w(`<path d="M10 1 h6 v6 h7 v6 h-7 v6 h-6 v-6 h-7 v-6 h7 z" fill="none" stroke="${fg}" stroke-width="1.3"/><path d="${arms[arm]}" fill="${fg}"/>`);
+  };
+  switch(t){
+    case 'L1': case 'R1': return w(`<path d="M3 17 V8 Q3 3 9 3 H17 Q23 3 23 8 V17 Z" fill="${fg}"/>${txt(t,14)}`);
+    case 'L2': case 'R2': return w(`<path d="M4 2 H22 V10 Q22 17 13 19 Q4 17 4 10 Z" fill="${fg}"/>${txt(t,12.5)}`);
+    case 'Triangle': return w(`<circle cx="13" cy="10" r="8.5" fill="none" stroke="var(--faint)"/><path d="M9 13 L13 6 L17 13 Z" fill="none" stroke="var(--tri)" stroke-width="1.6"/>`);
+    case 'Circle': return w(`<circle cx="13" cy="10" r="8.5" fill="none" stroke="var(--faint)"/><circle cx="13" cy="10" r="4" fill="none" stroke="var(--cir)" stroke-width="1.6"/>`);
+    case 'Cross': return w(`<circle cx="13" cy="10" r="8.5" fill="none" stroke="var(--faint)"/><path d="M9.5 6.5 L16.5 13.5 M16.5 6.5 L9.5 13.5" stroke="var(--crs)" stroke-width="1.6"/>`);
+    case 'Square': return w(`<circle cx="13" cy="10" r="8.5" fill="none" stroke="var(--faint)"/><rect x="9.5" y="6.5" width="7" height="7" fill="none" stroke="var(--sqr)" stroke-width="1.6"/>`);
+    case 'Create': case 'Options': return w(`<rect x="10" y="2" width="6" height="16" rx="3" fill="${fg}"/>${t==='Create'?'<path d="M7 4 L5 1 M7 7 L4 6" stroke="'+fg+'" stroke-width="1.3"/>':'<path d="M19 5 h3 M19 8 h3 M19 11 h3" stroke="'+fg+'" stroke-width="1.3"/>'}`);
+    case 'Mute': return w(`<rect x="10" y="2" width="6" height="10" rx="3" fill="none" stroke="${fg}" stroke-width="1.5"/><path d="M7 9 Q7 15 13 15 Q19 15 19 9 M13 15 V18 M5 2 L21 18" fill="none" stroke="${fg}" stroke-width="1.5"/>`);
+    case 'Up': case 'Down': case 'Left': case 'Right': return dpad(t);
+    case 'LeftStick': case 'RightStick': return w(`<circle cx="13" cy="10" r="8.5" fill="none" stroke="${fg}" stroke-width="1.5"/><circle cx="13" cy="10" r="4.5" fill="${fg}"/><text x="${t==='LeftStick'?2:20}" y="19" font-size="6" fill="${fg}" font-family="Segoe UI">${t==='LeftStick'?'L':'R'}</text>`);
+    case 'L3': case 'R3': return w(`<circle cx="13" cy="10" r="8.5" fill="${fg}"/>${txt(t,13)}`);
+    case 'PS': return w(`<circle cx="13" cy="10" r="8.5" fill="none" stroke="${fg}" stroke-width="1.5"/>${txt('PS',13,7,fg)}`);
+    case 'Touchpad': return w(`<rect x="2" y="7" width="22" height="11" rx="3" fill="none" stroke="${fg}" stroke-width="1.5"/><path d="M13 2 V9 M10 6 L13 9 L16 6" fill="none" stroke="${fg}" stroke-width="1.5"/>`);
+    case 'None': return w(`<circle cx="13" cy="10" r="8" fill="none" stroke="var(--danger)" stroke-width="1.5"/><path d="M7.5 15.5 L18.5 4.5" stroke="var(--danger)" stroke-width="1.5"/>`);
+  }
+  return '';
+}
+
+/* ---------- inputs ---------- */
+// [key, side, group]
+const INPUTS = [
+  ['L1','L'],['L2','L'],['Create','L'],
+  ['Up','L','dpad'],['Down','L','dpad'],['Left','L','dpad'],['Right','L','dpad'],
+  ['LeftStick','L'],['L3','L'],['Mute','L'],
+  ['R1','R'],['R2','R'],['Options','R'],['Triangle','R'],['Circle','R'],['Square','R'],['Cross','R'],
+  ['RightStick','R'],['R3','R'],['PS','R'],['Touchpad','R'],
+].map(([key,side,group])=>({key,side,group}));
+const STICKS=['LeftStick','RightStick'];
+const BUTTONS=['Cross','Circle','Square','Triangle','Up','Down','Left','Right','L1','R1','L2','R2','L3','R3','Create','Options','PS','Touchpad','Mute'];
+
+let settings = {Remap:{}};
+const nameOf = k => k==='None' ? T.disabled : T.dpadNames[k] || T.names[k] || k;
+const inputName = i => i.group==='dpad' ? T.dpadNames[i.key] : T.names[i.key];
+const actionOf = i => settings.Remap[i.key] ?? i.key;
+const isDefault = i => actionOf(i)===i.key;
+
+function renderLayout(hostEl, editable){
+  hostEl.innerHTML='';
+  const left=document.createElement('div'); left.className='col left';
+  const right=document.createElement('div'); right.className='col right';
+  const padWrap=document.createElement('div'); padWrap.innerHTML=PAD_SVG; const svg=padWrap.firstElementChild;
+  const lastGroup={L:null,R:null};
+  INPUTS.forEach(i=>{
+    const col=i.side==='L'?left:right;
+    if(i.group && lastGroup[i.side]!==i.group){
+      const g=document.createElement('div'); g.className='grp'; g.textContent=T.groupDpad; col.appendChild(g);
+    }
+    lastGroup[i.side]=i.group||null;
+    const b=document.createElement(editable?'button':'div');
+    const act=actionOf(i);
+    b.className='bind'+(isDefault(i)?' def':'')+(act==='None'?' off':'')+(i.group?' tp':'');
+    b.dataset.key=i.key;
+    b.title=inputName(i);
+    b.innerHTML=`<span class="bdg">${badge(i.key)}</span><span class="act">${isDefault(i)?inputName(i):nameOf(act)}</span>`;
+    const hl=on=>{
+      b.classList.toggle('hl',on);
+      const el=svg.querySelector('#el-'+i.key); if(!el) return;
+      (el.classList.contains('hot')?[el]:el.querySelectorAll('.hot')).forEach(n=>n.classList.toggle('hl',on));
+    };
+    b.addEventListener('mouseenter',()=>hl(true)); b.addEventListener('mouseleave',()=>hl(false));
+    b.addEventListener('focus',()=>hl(true)); b.addEventListener('blur',()=>hl(false));
+    if(editable) b.addEventListener('click',()=>openPick(i.key));
+    col.appendChild(b);
+  });
+  if(editable){
+    INPUTS.forEach(i=>{
+      const el=svg.querySelector('#el-'+i.key); if(!el) return;
+      el.style.cursor='pointer';
+      el.addEventListener('click',()=>openPick(i.key));
+    });
+  }
+  hostEl.append(left,svg,right);
+}
+function renderAll(){
+  renderLayout($('#homeLayout'),false);
+  renderLayout($('#editLayout'),true);
+  const n=Object.keys(settings.Remap).length;
+  $('#layoutSummary').textContent = n ? T.layoutChanged(n) : T.layoutDefault;
+}
+
+/* ---------- action picker ---------- */
+let pickKey=null;
+function openPick(key){
+  pickKey=key; const i=INPUTS.find(x=>x.key===key);
+  $('#pickBadge').innerHTML=badge(key);
+  $('#pickTitle').textContent=inputName(i);
+  drawPick(); $('#pick').classList.add('open');
+  document.querySelectorAll('#editLayout .bind').forEach(b=>b.classList.toggle('picked',b.dataset.key===key));
+}
+function drawPick(){
+  const i=INPUTS.find(x=>x.key===pickKey);
+  const act=actionOf(i);
+  $('#pickCur').textContent=(act===i.key?inputName(i):nameOf(act))+(isDefault(i)?` (${T.asPad.toLowerCase()})`:'');
+  $('#chips').innerHTML='';
+  (STICKS.includes(pickKey)?STICKS:BUTTONS).forEach(a=>{
+    const c=document.createElement('button'); c.className='chip'+(act===a?' on':'');
+    c.innerHTML=`${badge(a)}<span>${T.dpadNames[a]||T.names[a]}</span>`;
+    c.onclick=()=>setBind(a); $('#chips').appendChild(c);
+  });
+}
+function setBind(a){
+  const from=pickKey;
+  if(a===null || a===from) delete settings.Remap[from]; else settings.Remap[from]=a;
+  send({cmd:'remap', from, to: (a===null||a===from)?null:a});
+  renderAll(); closePick();
+}
+function closePick(){
+  $('#pick').classList.remove('open');
+  document.querySelectorAll('#editLayout .bind').forEach(b=>b.classList.remove('picked'));
+}
+$('#pickClose').onclick=closePick;
+$('#pickDefault').onclick=()=>setBind(null);
+$('#pickNone').onclick=()=>setBind('None');
+$('#pick').addEventListener('click',e=>{if(e.target.id==='pick')closePick()});
+document.addEventListener('keydown',e=>{if(e.key==='Escape') closePick();});
+$('#resetAll').onclick=()=>{settings.Remap={}; send({cmd:'resetRemap'}); renderAll();};
+
+/* ---------- navigation ---------- */
+function go(page){
+  const navPage = page==='controls'?'home':page;
+  document.querySelectorAll('nav button[data-page]').forEach(b=>b.classList.toggle('active',b.dataset.page===navPage));
+  document.querySelectorAll('.page').forEach(p=>p.classList.toggle('active',p.id==='page-'+page));
+  $('main').scrollTop=0;
+}
+document.querySelectorAll('[data-page]').forEach(b=>b.onclick=()=>go(b.dataset.page));
+document.querySelectorAll('[data-goto]').forEach(b=>b.addEventListener('click',()=>go(b.dataset.goto)));
+
+/* ---------- theme ---------- */
+function applyTheme(t){ if(t) document.documentElement.dataset.theme=t; else delete document.documentElement.dataset.theme; }
+$('#themeBtn').onclick=()=>{
+  const r=document.documentElement, dark=r.dataset.theme? r.dataset.theme==='dark' : matchMedia('(prefers-color-scheme: dark)').matches;
+  const t = dark?'light':'dark';
+  applyTheme(t); send({cmd:'set', key:'Theme', value:t});
+};
+$('#logBtn').onclick=()=>send({cmd:'openLog'});
+
+/* ---------- sliders and switches ---------- */
+function paint(inp){
+  const pct=(inp.value-inp.min)/(inp.max-inp.min)*100;
+  inp.parentElement.querySelector('.fill').style.width=`calc(${pct}% - ${pct/100*12}px + 6px)`;
+}
+document.querySelectorAll('.slider').forEach(s=>{
+  const t=s.querySelector('.ticks');
+  for(let i=0;i<+s.dataset.ticks;i++) t.appendChild(document.createElement('i'));
+  const inp=s.querySelector('input'); paint(inp); inp.addEventListener('input',()=>paint(inp));
+});
+const BUF=[16,24,32,40,48,56];
+const labels = {vol:v=>v+'%', vib:v=>v+'%', buf:v=>BUF[v]+' ms', dzl:v=>v+'%', dzr:v=>v+'%'};
+function showLabel(id){ $('#'+id+'Val').textContent=labels[id](+$('#'+id).value); }
+Object.keys(labels).forEach(id=>$('#'+id).addEventListener('input',()=>showLabel(id)));
+
+// Sliders send while dragging (throttled), switches immediately.
+const pending={};
+document.querySelectorAll('input[data-setting]').forEach(inp=>{
+  const key=inp.dataset.setting;
+  const value=()=>inp.type==='checkbox'?inp.checked:+inp.value;
+  if(inp.type==='checkbox') inp.addEventListener('change',()=>{settings[key]=value(); send({cmd:'set',key,value:value()}); syncSubs();});
+  else inp.addEventListener('input',()=>{
+    settings[key]=value();
+    clearTimeout(pending[key]); pending[key]=setTimeout(()=>send({cmd:'set',key,value:value()}),120);
+  });
+});
+$('#buf').addEventListener('input',()=>{
+  clearTimeout(pending.buf); pending.buf=setTimeout(()=>send({cmd:'set',key:'Latency',value:BUF[+$('#buf').value]}),120);
+});
+$('#autostart').addEventListener('change',()=>send({cmd:'autostart',value:$('#autostart').checked}));
+$('#emuToggle').addEventListener('change',()=>send({cmd:'emulation',value:$('#emuToggle').checked}));
+function syncSubs(){
+  $('#spkSub').classList.toggle('off',!$('#spkToggle').checked);
+  $('#vibSub').classList.toggle('off',!$('#vibToggle').checked);
+}
+$('#resetSettings').onclick=()=>send({cmd:'resetSettings'});
+
+function showSettings(s, autostart){
+  settings=s; settings.Remap=settings.Remap||{};
+  $('#spkToggle').checked=s.Speaker; $('#vol').value=s.Volume;
+  $('#vibToggle').checked=s.Haptics; $('#vib').value=s.HapticsGain;
+  let bi=BUF.findIndex(v=>v>=s.Latency); $('#buf').value=bi<0?BUF.length-1:bi;
+  $('#trgToggle').checked=s.AdaptiveTriggers; $('#lowBat').checked=s.LowBatteryNotifications;
+  $('#dzl').value=s.DeadzoneLeft; $('#dzr').value=s.DeadzoneRight; $('#invY').checked=s.InvertRightY;
+  $('#emuToggle').checked=s.Emulation;
+  $('#autostart').checked=autostart;
+  document.querySelectorAll('.slider input').forEach(paint);
+  Object.keys(labels).forEach(showLabel);
+  syncSubs(); renderAll();
+}
+
+/* ---------- live state ---------- */
+function showState(st){
+  $('#emuToggle').checked=st.emulation;
+  const state=$('#emuState');
+  state.className='state '+(!st.emulation?'off':st.connected?'on':'wait');
+  $('#emuStateText').textContent=!st.emulation?T.stateOff:st.connected?T.stateActive:T.stateWaiting;
+  $('#hidhideNotice').hidden=!st.hidhideMissing;
+  if(st.connected){
+    $('#model').textContent=st.model;
+    $('#modelSub').textContent='Bluetooth · '+(st.emulation?T.viaEmulation:T.viaBluetooth);
+  } else {
+    $('#model').textContent=T.noPad;
+    $('#modelSub').textContent=T.noPadSub;
+  }
+  const b=st.battery;
+  $('#battery').hidden=!b;
+  if(b){
+    $('#battFill').style.width=b.percent+'%'; $('#battPct').textContent=b.percent+'%';
+    $('#battFill').style.background = b.percent<=20?'var(--danger)':b.percent<=40?'var(--warn)':'var(--ok)';
+    $('#battNote').textContent=b.full?T.full:b.charging?T.charging:T.discharging;
+  }
+  $('#audioStat').hidden=!st.connected;
+  $('#audioText').textContent=st.audio?T.audioPlaying:T.audioIdle;
+}
+
+if(host){
+  host.addEventListener('message',e=>{
+    const m=e.data;
+    if(m.type==='init'){
+      T=STR[m.lang]||STR.en; document.documentElement.lang=m.lang;
+      applyTheme(m.theme); $('#version').textContent=m.version;
+      translate(); showSettings(m.settings, m.autostart); showState(m.state);
+    } else if(m.type==='settings') showSettings(m.settings, m.autostart);
+    else if(m.type==='state') showState(m.state);
+    else if(m.type==='page') go(m.page);
+  });
+  send({cmd:'ready'});
+} else {
+  // Opened in a browser: a preview with sample data.
+  translate();
+  showSettings({Speaker:true,Volume:80,Haptics:true,HapticsGain:100,Latency:32,AdaptiveTriggers:true,LowBatteryNotifications:true,
+                DeadzoneLeft:0,DeadzoneRight:0,InvertRightY:false,Emulation:true,Remap:{Cross:'Circle',Circle:'Cross'}}, false);
+  showState({emulation:true,connected:true,model:'DualSense',battery:{percent:75,charging:false,full:false},audio:true});
+}
+</script>
+</body>
+</html>

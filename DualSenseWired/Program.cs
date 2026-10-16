@@ -1,110 +1,130 @@
-﻿// A virtual wired DualSense (HID + USB audio) attached through usbip-win2, backed by the real
-// controller connected over Bluetooth.
+﻿// DualSense Wired for Windows: a Bluetooth DualSense appears to games as a wired one (speaker, HD
+// haptics, adaptive triggers), through a virtual USB device attached with usbip-win2.
+//
+//   DualSenseWired.exe              start (or show the running instance's settings)
+//   DualSenseWired.exe --minimized  start in the tray only (autostart)
+//   DualSenseWired.exe --stop       stop the running instance cleanly
 
 using System.Diagnostics;
-using DualSenseWired.Bridge;
+using System.Runtime.InteropServices;
+using DualSenseWired.App;
 using DualSenseWired.Device;
-using DualSenseWired.UsbIp;
 
-// Console and a log file (the app runs elevated, usually without a visible console).
-string logPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "DualSenseWired", "DualSenseWired.log");
-Directory.CreateDirectory(Path.GetDirectoryName(logPath)!);
-var logFile = new StreamWriter(logPath, append: false) { AutoFlush = true };
-var logLock = new object();
-void Log(string message)
+namespace DualSenseWired;
+
+static class Program
 {
-    string line = $"{DateTime.Now:HH:mm:ss.fff} {message}";
-    lock (logLock)
+    const string InstanceName = @"Local\DualSenseWired.Instance";
+    const string ShowEventName = @"Local\DualSenseWired.Show";
+    const string StopEventName = @"Local\DualSenseWired.Stop";
+
+    [STAThread]
+    static int Main(string[] args)
     {
-        Console.WriteLine(line);
-        logFile.WriteLine(line);
+        using var instance = new Mutex(true, InstanceName, out bool first);
+        if (!first)
+            return SignalRunning(args.Contains("--stop") ? StopEventName : ShowEventName, args.Contains("--stop"));
+        if (args.Contains("--stop"))
+            return 0;
+
+        ApplicationConfiguration.Initialize();
+        if (!DescriptorsConsistent())
+            return 1;
+        if (!BridgeHost.UsbIpInstalled)
+        {
+            MessageBox.Show(Strings.Current.MissingUsbIp + "\nhttps://github.com/vadimgrn/usbip-win2/releases",
+                            Strings.Current.AppName, MessageBoxButtons.OK, MessageBoxIcon.Error);
+            return 1;
+        }
+
+        // Audio timing must not suffer when another app is in the foreground: no background power
+        // throttling (Windows 11 also ignores timer resolution requests of throttled processes).
+        Process.GetCurrentProcess().PriorityClass = ProcessPriorityClass.High;
+        DisablePowerThrottling();
+        Logger.Log("DualSense Wired started");
+
+        using var showEvent = new EventWaitHandle(false, EventResetMode.AutoReset, ShowEventName);
+        using var stopEvent = new EventWaitHandle(false, EventResetMode.AutoReset, StopEventName);
+        var app = new TrayApp(Settings.Load(), showSettings: !args.Contains("--minimized"));
+        var ui = SynchronizationContext.Current!;
+        var signals = new Thread(() =>
+        {
+            while (true)
+            {
+                int which = WaitHandle.WaitAny(new WaitHandle[] { showEvent, stopEvent });
+                if (which == 0)
+                    ui.Post(_ => app.ShowSettings(), null);
+                else
+                {
+                    ui.Post(_ => app.Exit(), null);
+                    return;
+                }
+            }
+        }) { IsBackground = true };
+        signals.Start();
+        // Logoff/shutdown: give the controller back too.
+        Microsoft.Win32.SystemEvents.SessionEnding += (_, _) => app.Exit();
+        Application.Run(app);
+        Logger.Log("DualSense Wired stopped");
+        return 0;
     }
-}
 
-const string UsbIpExe = @"C:\Program Files\USBip\usbip.exe";
-
-// A typo in the descriptor tables would only show up as Windows refusing the device.
-int declared = DualSenseDescriptors.Configuration[2] | DualSenseDescriptors.Configuration[3] << 8;
-if (declared != DualSenseDescriptors.Configuration.Length || DualSenseDescriptors.HidDescriptor[1] != 0x21
-    || (DualSenseDescriptors.HidDescriptor[7] | DualSenseDescriptors.HidDescriptor[8] << 8) != DualSenseDescriptors.HidReport.Length)
-{
-    Log($"descriptor tables are inconsistent: config {DualSenseDescriptors.Configuration.Length}/{declared} bytes, " +
-        $"HID report {DualSenseDescriptors.HidReport.Length} bytes");
-    return 1;
-}
-
-// Audio timing must not suffer when another app is in the foreground: no background power
-// throttling (Windows 11 also ignores timer resolution requests of throttled processes).
-Process.GetCurrentProcess().PriorityClass = ProcessPriorityClass.High;
-DisablePowerThrottling();
-
-using var cts = new CancellationTokenSource();
-Console.CancelKeyPress += (_, e) => { e.Cancel = true; cts.Cancel(); };
-
-// --test: no real controller, a stand-in that only logs what the host sends.
-IControllerLink link;
-if (args.Contains("--test"))
-{
-    link = new TestLink(Log);
-}
-else
-{
-    using (var found = BluetoothLink.FindController())
+    /// <summary>Ask the running instance to show itself or stop; for --stop, wait until it has.</summary>
+    static int SignalRunning(string eventName, bool waitForExit)
     {
-        if (found == null)
-            Log("no Bluetooth DualSense yet: pair it in Windows Bluetooth settings (hold Create + PS), it will be picked up");
+        try
+        {
+            using var signal = EventWaitHandle.OpenExisting(eventName);
+            signal.Set();
+        }
+        catch (WaitHandleCannotBeOpenedException)
+        {
+            return 1;
+        }
+        if (!waitForExit)
+            return 0;
+        using var instance = new Mutex(false, InstanceName);
+        try
+        {
+            if (instance.WaitOne(TimeSpan.FromSeconds(15)))
+                instance.ReleaseMutex();
+        }
+        catch (AbandonedMutexException)
+        {
+        }
+        return 0;
     }
-    link = new BluetoothLink(Log);
-}
 
-// Closing the window or a normal kill: still give the controller back to other programs.
-AppDomain.CurrentDomain.ProcessExit += (_, _) => (link as IDisposable)?.Dispose();
-
-var device = new VirtualDualSense(link, Log);
-var server = new UsbIpServer(device, Log);
-var serverTask = server.RunAsync(cts.Token);
-
-if (!args.Contains("--no-attach"))
-{
-    await Task.Delay(500);
-    var attach = Process.Start(new ProcessStartInfo(UsbIpExe, $"attach -r 127.0.0.1 -b {device.BusId}")
+    /// <summary>A typo in the descriptor tables would only show up as Windows refusing the device.</summary>
+    static bool DescriptorsConsistent()
     {
-        RedirectStandardOutput = true,
-        RedirectStandardError = true,
-    })!;
-    await attach.WaitForExitAsync();
-    Log($"usbip attach: exit {attach.ExitCode} {(await attach.StandardOutput.ReadToEndAsync()).Trim()} {(await attach.StandardError.ReadToEndAsync()).Trim()}");
-}
-
-Log("running, Ctrl+C to stop");
-try
-{
-    await serverTask;
-}
-catch (OperationCanceledException)
-{
-}
-Log("stopping");
-(link as IDisposable)?.Dispose();
-return 0;
-
-void DisablePowerThrottling()
-{
-    const int ProcessPowerThrottling = 4;
-    const uint ExecutionSpeed = 0x1, IgnoreTimerResolution = 0x4;
-    // PROCESS_POWER_THROTTLING_STATE { Version = 1, ControlMask, StateMask = 0 (= not throttled) }
-    var state = new uint[] { 1, ExecutionSpeed | IgnoreTimerResolution, 0 };
-    var handle = System.Runtime.InteropServices.GCHandle.Alloc(state, System.Runtime.InteropServices.GCHandleType.Pinned);
-    try
-    {
-        if (!SetProcessInformation(Process.GetCurrentProcess().Handle, ProcessPowerThrottling, handle.AddrOfPinnedObject(), 12))
-            Log($"could not disable power throttling: error {System.Runtime.InteropServices.Marshal.GetLastWin32Error()}");
+        int declared = DualSenseDescriptors.Configuration[2] | DualSenseDescriptors.Configuration[3] << 8;
+        if (declared == DualSenseDescriptors.Configuration.Length && DualSenseDescriptors.HidDescriptor[1] == 0x21
+            && (DualSenseDescriptors.HidDescriptor[7] | DualSenseDescriptors.HidDescriptor[8] << 8) == DualSenseDescriptors.HidReport.Length)
+            return true;
+        Logger.Log($"descriptor tables are inconsistent: config {DualSenseDescriptors.Configuration.Length}/{declared} bytes, " +
+                   $"HID report {DualSenseDescriptors.HidReport.Length} bytes");
+        return false;
     }
-    finally
-    {
-        handle.Free();
-    }
-}
 
-[System.Runtime.InteropServices.DllImport("kernel32.dll", SetLastError = true)]
-static extern bool SetProcessInformation(IntPtr process, int infoClass, IntPtr info, int size);
+    static void DisablePowerThrottling()
+    {
+        const int ProcessPowerThrottling = 4;
+        const uint ExecutionSpeed = 0x1, IgnoreTimerResolution = 0x4;
+        // PROCESS_POWER_THROTTLING_STATE { Version = 1, ControlMask, StateMask = 0 (= not throttled) }
+        var state = new uint[] { 1, ExecutionSpeed | IgnoreTimerResolution, 0 };
+        var handle = GCHandle.Alloc(state, GCHandleType.Pinned);
+        try
+        {
+            if (!SetProcessInformation(Process.GetCurrentProcess().Handle, ProcessPowerThrottling, handle.AddrOfPinnedObject(), 12))
+                Logger.Log($"could not disable power throttling: error {Marshal.GetLastWin32Error()}");
+        }
+        finally
+        {
+            handle.Free();
+        }
+    }
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    static extern bool SetProcessInformation(IntPtr process, int infoClass, IntPtr info, int size);
+}
