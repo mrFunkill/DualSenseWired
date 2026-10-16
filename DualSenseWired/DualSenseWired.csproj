@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
@@ -7,6 +7,13 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>Assets\app.ico</ApplicationIcon>
+    <Version>0.1.0</Version>
+    <Product>DualSense Wired</Product>
+    <Company>mrFunkill</Company>
+    <Authors>mrFunkill</Authors>
+    <Copyright>Copyright (c) 2026 mrFunkill</Copyright>
+    <AssemblyTitle>DualSense Wired</AssemblyTitle>
   </PropertyGroup>
 
   <ItemGroup>

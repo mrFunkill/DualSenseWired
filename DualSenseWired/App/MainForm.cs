@@ -27,7 +27,7 @@ public sealed class MainForm : Form
         _host = host;
         _setEmulation = setEmulation;
         Text = Strings.Current.AppName;
-        Icon = TrayApp.MakeIcon(true);
+        Icon = Icon.ExtractAssociatedIcon(Environment.ProcessPath!) ?? TrayApp.MakeIcon(true);
         StartPosition = FormStartPosition.CenterScreen;
         ClientSize = new Size(1180, 800);
         MinimumSize = new Size(760, 560);

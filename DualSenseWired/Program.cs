@@ -4,6 +4,7 @@
 //   DualSenseWired.exe              start (or show the running instance's settings)
 //   DualSenseWired.exe --minimized  start in the tray only (autostart)
 //   DualSenseWired.exe --stop       stop the running instance cleanly
+//   DualSenseWired.exe --set-autostart on|off   start with Windows (used by the installer)
 
 using System.Diagnostics;
 using System.Runtime.InteropServices;
@@ -21,6 +22,11 @@ static class Program
     [STAThread]
     static int Main(string[] args)
     {
+        // For the installer: create/remove the logon task (no window, no running instance needed).
+        int i = Array.IndexOf(args, "--set-autostart");
+        if (i >= 0 && i + 1 < args.Length)
+            return Autostart.Set(args[i + 1] == "on") ? 0 : 1;
+
         using var instance = new Mutex(true, InstanceName, out bool first);
         if (!first)
             return SignalRunning(args.Contains("--stop") ? StopEventName : ShowEventName, args.Contains("--stop"));

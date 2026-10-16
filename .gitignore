@@ -2,3 +2,6 @@ bin/
 obj/
 *.user
 .vs/
+installer/deps/
+installer/output/
+publish/
