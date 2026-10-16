@@ -6,7 +6,20 @@ using DualSenseWired.Bridge;
 using DualSenseWired.Device;
 using DualSenseWired.UsbIp;
 
-static void Log(string message) => Console.WriteLine($"{DateTime.Now:HH:mm:ss.fff} {message}");
+// Console and a log file (the app runs elevated, usually without a visible console).
+string logPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "DualSenseWired", "DualSenseWired.log");
+Directory.CreateDirectory(Path.GetDirectoryName(logPath)!);
+var logFile = new StreamWriter(logPath, append: false) { AutoFlush = true };
+var logLock = new object();
+void Log(string message)
+{
+    string line = $"{DateTime.Now:HH:mm:ss.fff} {message}";
+    lock (logLock)
+    {
+        Console.WriteLine(line);
+        logFile.WriteLine(line);
+    }
+}
 
 const string UsbIpExe = @"C:\Program Files\USBip\usbip.exe";
 
@@ -44,6 +57,9 @@ else
     link = new BluetoothLink(Log);
 }
 
+// Closing the window or a normal kill: still give the controller back to other programs.
+AppDomain.CurrentDomain.ProcessExit += (_, _) => (link as IDisposable)?.Dispose();
+
 var device = new VirtualDualSense(link, Log);
 var server = new UsbIpServer(device, Log);
 var serverTask = server.RunAsync(cts.Token);
@@ -68,9 +84,11 @@ try
 catch (OperationCanceledException)
 {
 }
+Log("stopping");
+(link as IDisposable)?.Dispose();
 return 0;
 
-static void DisablePowerThrottling()
+void DisablePowerThrottling()
 {
     const int ProcessPowerThrottling = 4;
     const uint ExecutionSpeed = 0x1, IgnoreTimerResolution = 0x4;

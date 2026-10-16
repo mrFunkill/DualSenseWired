@@ -23,6 +23,8 @@ public sealed class BluetoothLink : IControllerLink, IDisposable
     readonly ControllerStream _stream;
     readonly object _deviceLock = new();
     HidDevice? _device;
+    readonly HashSet<string> _hidden = new();      // instance IDs we hid with HidHide
+    readonly HashSet<string> _hideFailed = new();
     byte[]? _lastInput;
     long _btReports, _delivered, _outputs;
     DateTime _lastModeSwitch;
@@ -62,6 +64,18 @@ public sealed class BluetoothLink : IControllerLink, IDisposable
             var device = FindController();
             if (device == null)
             {
+                await Task.Delay(RescanInterval, ct);
+                continue;
+            }
+            string? instanceId = HidHide.InstanceIdOf(device.Path);
+            if (instanceId != null && !_hidden.Contains(instanceId) && !_hideFailed.Contains(instanceId))
+            {
+                // Hiding restarts the device: open it again afterwards.
+                device.Dispose();
+                if (HidHide.Hide(instanceId, _log))
+                    _hidden.Add(instanceId);
+                else
+                    _hideFailed.Add(instanceId);
                 await Task.Delay(RescanInterval, ct);
                 continue;
             }
@@ -155,7 +169,7 @@ public sealed class BluetoothLink : IControllerLink, IDisposable
                 _log($"GET feature 0x{reportId:x2} failed: {e.Message}");
             }
         }
-        if (reportId == DualSenseProtocol.FeaturePairing)
+        if (reportId == DualSenseProtocol.FeaturePairing && _hidden.Count == 0)
         {
             // Until the Bluetooth controller is hidden (HidHide), Steam sees both: with the same
             // serial it would treat the "USB" one as the same controller plugged in and power the
@@ -226,11 +240,18 @@ public sealed class BluetoothLink : IControllerLink, IDisposable
         }
     }
 
+    int _disposed;
+
     public void Dispose()
     {
+        if (Interlocked.Exchange(ref _disposed, 1) != 0)
+            return;
         _cts.Cancel();
         _stream.Dispose();
         lock (_deviceLock)
             _device?.Dispose();
+        foreach (string instanceId in _hidden)
+            HidHide.Unhide(instanceId, _log);
+        _hidden.Clear();
     }
 }
