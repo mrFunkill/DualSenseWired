@@ -300,6 +300,22 @@ public sealed class ControllerStream : IDisposable
 
     // -- the stream: one report every 10.667 ms --
 
+    readonly object _writeStatsLock = new();
+    long _writeCount;
+    double _writeSumMs, _writeMaxMs;
+
+    /// <summary>Writes to the controller since the last call: count, average and longest duration.</summary>
+    public (long Count, double AvgMs, double MaxMs) TakeWriteStats()
+    {
+        lock (_writeStatsLock)
+        {
+            var result = (_writeCount, _writeCount > 0 ? _writeSumMs / _writeCount : 0, _writeMaxMs);
+            _writeCount = 0;
+            _writeSumMs = _writeMaxMs = 0;
+            return result;
+        }
+    }
+
     void Write(HidDevice device, byte[] report)
     {
         var started = _clock.Elapsed;
@@ -313,6 +329,12 @@ public sealed class ControllerStream : IDisposable
             return;
         }
         var took = _clock.Elapsed - started;
+        lock (_writeStatsLock)
+        {
+            _writeCount++;
+            _writeSumMs += took.TotalMilliseconds;
+            _writeMaxMs = Math.Max(_writeMaxMs, took.TotalMilliseconds);
+        }
         if (took > StallThreshold)
         {
             // The Bluetooth link is congested: give it time to drain instead of piling up more.

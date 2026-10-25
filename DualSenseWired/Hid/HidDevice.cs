@@ -132,6 +132,12 @@ public sealed class HidDevice : IDisposable
             throw new Win32Exception();
     }
 
+    /// <summary>
+    /// Size of Windows' input report queue for this handle (default 32). Reports are full state
+    /// snapshots: a long queue only means reading old ones once we fell behind for a moment.
+    /// </summary>
+    public bool SetInputBuffers(int count) => HidD_SetNumInputBuffers(_handle, count);
+
     public void Dispose()
     {
         _stream.Dispose();
@@ -175,6 +181,7 @@ public sealed class HidDevice : IDisposable
     [DllImport("hid.dll")] static extern bool HidD_GetPreparsedData(SafeFileHandle device, out IntPtr data);
     [DllImport("hid.dll")] static extern bool HidD_FreePreparsedData(IntPtr data);
     [DllImport("hid.dll")] static extern int HidP_GetCaps(IntPtr data, out HIDP_CAPS caps);
+    [DllImport("hid.dll", SetLastError = true)] static extern bool HidD_SetNumInputBuffers(SafeFileHandle device, int count);
     [DllImport("hid.dll", SetLastError = true)] static extern bool HidD_GetFeature(SafeFileHandle device, byte[] buffer, int length);
     [DllImport("hid.dll", SetLastError = true)] static extern bool HidD_SetFeature(SafeFileHandle device, byte[] buffer, int length);
 

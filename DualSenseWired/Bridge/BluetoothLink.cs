@@ -27,6 +27,7 @@ public sealed class BluetoothLink : IControllerLink, IDisposable
     readonly HashSet<string> _hideFailed = new();
     byte[]? _lastInput;
     long _btReports, _delivered, _outputs;
+    readonly InputLag _lag = new();
     DateTime _lastModeSwitch;
 
     public BluetoothLink(Action<string> log)
@@ -137,6 +138,8 @@ public sealed class BluetoothLink : IControllerLink, IDisposable
                         restore[0] &= unchecked((byte)~TriggerFlags);
                     _stream.SubmitOutput(restore);    // the controller forgot what the game had set
                 }
+                if (!device.SetInputBuffers(2))
+                    _log("could not shorten the input report queue");
                 await ReadLoopAsync(device, ct);
             }
             catch (Exception e) when (e is IOException or OperationCanceledException or System.ComponentModel.Win32Exception)
@@ -167,6 +170,7 @@ public sealed class BluetoothLink : IControllerLink, IDisposable
             var usb = DualSenseProtocol.BtInputToUsb(report);
             if (usb != null)
             {
+                _lag.Add(usb);
                 _lastInput = (byte[])usb.Clone();
                 ButtonMap?.Apply(usb);
                 _inputs.Writer.TryWrite(usb);
@@ -280,12 +284,14 @@ public sealed class BluetoothLink : IControllerLink, IDisposable
     {
         while (!ct.IsCancellationRequested)
         {
-            await Task.Delay(TimeSpan.FromSeconds(30), ct);
+            await Task.Delay(TimeSpan.FromSeconds(10), ct);
             long bt = Interlocked.Exchange(ref _btReports, 0);
             long delivered = Interlocked.Exchange(ref _delivered, 0);
             long outputs = Interlocked.Exchange(ref _outputs, 0);
+            var writes = _stream.TakeWriteStats();
             if (Connected)
-                _log($"controller reports {bt}, delivered {delivered}, game outputs {outputs} in 30 s");
+                _log($"controller reports {bt}, delivered {delivered}, game outputs {outputs} in 10 s; {_lag.TakeSummary()}; " +
+                     $"writes to controller {writes.Count}, avg {writes.AvgMs:0.0} ms, max {writes.MaxMs:0.0} ms");
         }
     }
 
@@ -302,5 +308,64 @@ public sealed class BluetoothLink : IControllerLink, IDisposable
         foreach (string instanceId in _hidden)
             HidHide.Unhide(instanceId, _log);
         _hidden.Clear();
+    }
+}
+
+/// <summary>
+/// How old input reports are when we get them: the controller stamps each report (sensor timestamp,
+/// 1/3 µs); against our clock the difference only grows when reports wait in a queue somewhere.
+/// The smallest difference seen recently is the baseline (zero waiting).
+/// </summary>
+sealed class InputLag
+{
+    readonly object _lock = new();
+    readonly System.Diagnostics.Stopwatch _clock = System.Diagnostics.Stopwatch.StartNew();
+    readonly Queue<double> _windowMins = new();     // baselines of the last windows (clock drift)
+    uint _lastStamp;
+    double _sensorUs;
+    bool _started;
+    double _min = double.MaxValue, _max = double.MinValue, _sum;
+    long _count, _bursts;
+    double _lastLocalUs;
+
+    public void Add(byte[] usbReport)
+    {
+        uint stamp = BitConverter.ToUInt32(usbReport, 28);
+        double localUs = _clock.Elapsed.TotalMilliseconds * 1000;
+        lock (_lock)
+        {
+            if (_started)
+                _sensorUs += unchecked(stamp - _lastStamp) / 3.0;     // wraps every ~24 min
+            _started = true;
+            _lastStamp = stamp;
+            double offset = localUs - _sensorUs;
+            _min = Math.Min(_min, offset);
+            _max = Math.Max(_max, offset);
+            _sum += offset;
+            _count++;
+            if (localUs - _lastLocalUs < 250)
+                _bursts++;          // read right after the previous one: it was waiting in a queue
+            _lastLocalUs = localUs;
+        }
+    }
+
+    public string TakeSummary()
+    {
+        lock (_lock)
+        {
+            if (_count == 0)
+                return "input lag ?";
+            _windowMins.Enqueue(_min);
+            while (_windowMins.Count > 10)
+                _windowMins.Dequeue();
+            double baseline = _windowMins.Min();
+            string result = $"input lag avg {(_sum / _count - baseline) / 1000:0.0} ms, max {(_max - baseline) / 1000:0.0} ms, " +
+                            $"queued reads {_bursts * 100 / _count}%";
+            _min = double.MaxValue;
+            _max = double.MinValue;
+            _sum = 0;
+            _count = _bursts = 0;
+            return result;
+        }
     }
 }
