@@ -59,6 +59,9 @@ h1 .sep{color:var(--faint);font-weight:400}
 .muted{color:var(--muted)}
 .notice{border-color:color-mix(in srgb,var(--warn) 45%,var(--border));color:var(--text)}
 .notice b{color:var(--warn)}
+.update{display:flex;align-items:center;gap:16px;flex-wrap:wrap;border-color:color-mix(in srgb,var(--accent) 45%,var(--border));background:var(--accent-soft)}
+.update .txt{flex:1;min-width:200px}
+.update .title{font-weight:600}
 
 .check{display:inline-flex;align-items:center;gap:10px;cursor:pointer;user-select:none}
 .check input{appearance:none;width:18px;height:18px;margin:0;border:1px solid var(--faint);border-radius:4px;background:var(--card);display:grid;place-items:center;cursor:pointer;flex-shrink:0}
@@ -210,6 +213,15 @@ h1 .sep{color:var(--faint);font-weight:400}
       <section class="page active" id="page-home">
         <h1 data-t="navHome"></h1>
 
+        <div class="card update" id="updateCard" hidden>
+          <div class="txt">
+            <div class="title" id="updateTitle"></div>
+            <div class="muted" style="font-size:13px" id="updateText"></div>
+          </div>
+          <button class="btn" id="updateNotes" data-t="whatsNew"></button>
+          <button class="btn primary" id="updateBtn" data-t="updateNow"></button>
+        </div>
+
         <div class="card notice" id="hidhideNotice" hidden><b>!</b> <span data-t="hidhideMissing"></span></div>
 
         <div class="card hero">
@@ -327,6 +339,12 @@ h1 .sep{color:var(--faint);font-weight:400}
         </div>
         <div class="card section">
           <div class="row-head">
+            <div><div data-t="checkUpdates"></div><div class="desc" data-t="checkUpdatesDesc"></div></div>
+            <label class="check"><input type="checkbox" id="chkUpd" data-setting="CheckUpdates"></label>
+          </div>
+        </div>
+        <div class="card section">
+          <div class="row-head">
             <div><div data-t="autostart"></div><div class="desc" data-t="autostartDesc"></div></div>
             <label class="check"><input type="checkbox" id="autostart"></label>
           </div>
@@ -388,6 +406,10 @@ const STR = {
     reset:'Reset', current:'Now', asPad:'As on the controller', disable:'Disable', close:'Close', disabled:'Disabled',
     hidhideMissing:'HidHide is not installed: Steam and games also see the Bluetooth controller.',
     groupDpad:'D-pad',
+    updateTitle:v=>`Version ${v} is available`, updateDesc:'The app closes for a moment while the update installs; the controller reconnects.',
+    updateDownloading:'Downloading…', updateInstalling:'Installing…', updateFailed:'Update failed',
+    whatsNew:'What's new', updateNow:'Update',
+    checkUpdates:'Check for updates', checkUpdatesDesc:'Looks for new releases on GitHub',
     names:{Cross:'Cross',Circle:'Circle',Square:'Square',Triangle:'Triangle',Up:'Up',Down:'Down',Left:'Left',Right:'Right',
       L1:'L1',R1:'R1',L2:'L2',R2:'R2',L3:'L3',R3:'R3',Create:'Create',Options:'Options',PS:'PS',Touchpad:'Touchpad click',Mute:'Mute',
       LeftStick:'Left stick',RightStick:'Right stick'},
@@ -419,6 +441,10 @@ const STR = {
     reset:'Сбросить', current:'Сейчас', asPad:'Как на геймпаде', disable:'Отключить', close:'Закрыть', disabled:'Отключено',
     hidhideMissing:'HidHide не установлен: Steam и игры видят и Bluetooth-геймпад.',
     groupDpad:'Крестовина',
+    updateTitle:v=>`Доступна версия ${v}`, updateDesc:'Приложение ненадолго закроется на время установки; геймпад переподключится.',
+    updateDownloading:'Загрузка…', updateInstalling:'Установка…', updateFailed:'Не удалось обновить',
+    whatsNew:'Что нового', updateNow:'Обновить',
+    checkUpdates:'Проверять обновления', checkUpdatesDesc:'Искать новые версии на GitHub',
     names:{Cross:'Крест',Circle:'Круг',Square:'Квадрат',Triangle:'Треугольник',Up:'Вверх',Down:'Вниз',Left:'Влево',Right:'Вправо',
       L1:'L1',R1:'R1',L2:'L2',R2:'R2',L3:'L3',R3:'R3',Create:'Create',Options:'Options',PS:'PS',Touchpad:'Нажатие тачпада',Mute:'Mute',
       LeftStick:'Левый стик',RightStick:'Правый стик'},
@@ -612,6 +638,8 @@ $('#themeBtn').onclick=()=>{
   applyTheme(t); send({cmd:'set', key:'Theme', value:t});
 };
 $('#logBtn').onclick=()=>send({cmd:'openLog'});
+$('#updateBtn').onclick=()=>send({cmd:'update'});
+$('#updateNotes').onclick=()=>send({cmd:'openRelease'});
 
 /* ---------- sliders and switches ---------- */
 function paint(inp){
@@ -655,6 +683,7 @@ function showSettings(s, autostart){
   $('#spkToggle').checked=s.Speaker; $('#vol').value=s.Volume;
   $('#vibToggle').checked=s.Haptics; $('#vib').value=s.HapticsGain;
   let bi=BUF.findIndex(v=>v>=s.Latency); $('#buf').value=bi<0?BUF.length-1:bi;
+  $('#chkUpd').checked=s.CheckUpdates;
   $('#trgToggle').checked=s.AdaptiveTriggers; $('#lowBat').checked=s.LowBatteryNotifications;
   $('#dzl').value=s.DeadzoneLeft; $('#dzr').value=s.DeadzoneRight; $('#invY').checked=s.InvertRightY;
   $('#emuToggle').checked=s.Emulation;
@@ -671,6 +700,15 @@ function showState(st){
   state.className='state '+(!st.emulation?'off':st.connected?'on':'wait');
   $('#emuStateText').textContent=!st.emulation?T.stateOff:st.connected?T.stateActive:T.stateWaiting;
   $('#hidhideNotice').hidden=!st.hidhideMissing;
+  const u=st.update;
+  $('#updateCard').hidden=!u;
+  if(u){
+    $('#updateTitle').textContent=T.updateTitle(u.version);
+    const busy=u.state==='downloading'||u.state==='installing';
+    $('#updateText').textContent=u.state==='downloading'?T.updateDownloading:u.state==='installing'?T.updateInstalling
+      :u.state==='failed'?`${T.updateFailed}: ${u.error}`:T.updateDesc;
+    $('#updateBtn').disabled=busy;
+  }
   if(st.connected){
     $('#model').textContent=st.model;
     $('#modelSub').textContent='Bluetooth · '+(st.emulation?T.viaEmulation:T.viaBluetooth);

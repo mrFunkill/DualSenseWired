@@ -16,6 +16,7 @@ public sealed class Settings
     public int HapticsGain { get; set; } = 100;        // %
     public int Latency { get; set; } = ControllerStream.DefaultTargetLevel;   // ms buffered in the controller
     public bool LowBatteryNotifications { get; set; } = true;
+    public bool CheckUpdates { get; set; } = true;
     public bool AdaptiveTriggers { get; set; } = true;
     public int DeadzoneLeft { get; set; }               // % of the stick's travel
     public int DeadzoneRight { get; set; }

@@ -3,7 +3,7 @@
 ; then compile this script with ISCC.exe.
 
 #define AppName "DualSense Wired"
-#define AppVersion "0.1.0"
+#define AppVersion "0.2.0"
 #define AppExe "DualSenseWired.exe"
 #define UsbIpSetup "USBip-0.9.8.1-x64.exe"
 #define HidHideSetup "HidHide_1.5.230_x64.exe"
@@ -67,6 +67,8 @@ Filename: "{tmp}\{#HidHideSetup}"; Parameters: "/quiet /norestart"; StatusMsg: "
 Filename: "{app}\{#AppExe}"; Parameters: "--set-autostart on"; Flags: runhidden; Tasks: autostart
 Filename: "{app}\{#AppExe}"; Parameters: "--set-autostart off"; Flags: runhidden; Tasks: not autostart
 Filename: "{app}\{#AppExe}"; Description: "{cm:Launch}"; Flags: nowait postinstall skipifsilent; Check: not RestartNeeded
+; An update started from the app runs silently: start the new version again.
+Filename: "{app}\{#AppExe}"; Flags: nowait; Check: WizardSilent and not RestartNeeded
 
 [UninstallRun]
 ; Stop it cleanly (unplugs the virtual controller, gives the real one back to Steam), drop autostart.

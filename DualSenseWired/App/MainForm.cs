@@ -15,14 +15,16 @@ public sealed class MainForm : Form
     readonly Settings _settings;
     readonly BridgeHost _host;
     readonly Action<bool> _setEmulation;
+    readonly Updater _updater;
     readonly WebView2 _web = new() { Dock = DockStyle.Fill };
     readonly System.Windows.Forms.Timer _refresh = new() { Interval = 1000 };
     bool _ready;
 
     static readonly JsonSerializerOptions Json = new() { Converters = { new System.Text.Json.Serialization.JsonStringEnumConverter() } };
 
-    public MainForm(Settings settings, BridgeHost host, Action<bool> setEmulation)
+    public MainForm(Settings settings, BridgeHost host, Updater updater, Action<bool> setEmulation)
     {
+        _updater = updater;
         _settings = settings;
         _host = host;
         _setEmulation = setEmulation;
@@ -77,6 +79,9 @@ public sealed class MainForm : Form
             battery = battery is { } b ? new { percent = b.Percent, charging = b.Charging, full = b.Full } : null,
             audio = connected && link!.Stream.Streaming,
             hidhideMissing = Hid.HidHide.CliPath == null,
+            update = _updater.Available is { } u
+                ? new { version = u.Tag, url = u.PageUrl, state = _updater.State, error = _updater.Error }
+                : null,
         };
     }
 
@@ -147,6 +152,15 @@ public sealed class MainForm : Form
                 Changed();
                 Post(SettingsMessage());
                 break;
+            case "update":
+                if (_updater.Available != null && _updater.State is "idle" or "failed")
+                    _ = _updater.InstallAsync().ContinueWith(_ => BeginInvoke(PostState));
+                PostState();
+                break;
+            case "openRelease":
+                if (_updater.Available is { } release)
+                    System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(release.PageUrl) { UseShellExecute = true });
+                break;
             case "openLog":
                 System.Diagnostics.Process.Start("notepad.exe", $"\"{Logger.FilePath}\"");
                 break;
@@ -163,6 +177,7 @@ public sealed class MainForm : Form
             case nameof(Settings.Haptics): _settings.Haptics = value.GetValue<bool>(); break;
             case nameof(Settings.AdaptiveTriggers): _settings.AdaptiveTriggers = value.GetValue<bool>(); break;
             case nameof(Settings.LowBatteryNotifications): _settings.LowBatteryNotifications = value.GetValue<bool>(); break;
+            case nameof(Settings.CheckUpdates): _settings.CheckUpdates = value.GetValue<bool>(); break;
             case nameof(Settings.InvertRightY): _settings.InvertRightY = value.GetValue<bool>(); break;
             case nameof(Settings.Volume): _settings.Volume = (int)value.GetValue<double>(); break;
             case nameof(Settings.HapticsGain): _settings.HapticsGain = (int)value.GetValue<double>(); break;

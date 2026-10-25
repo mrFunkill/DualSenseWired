@@ -14,6 +14,9 @@ public sealed class TrayApp : ApplicationContext
     readonly Strings _s = Strings.Current;
     readonly Icon _iconOn = MakeIcon(true), _iconOff = MakeIcon(false);
     MainForm? _form;
+    readonly Updater _updater;
+    readonly System.Windows.Forms.Timer _updateTimer = new() { Interval = 15000 };
+    string? _notifiedUpdate;
     int _warnedAt = 101;
     bool _exiting;
 
@@ -21,6 +24,7 @@ public sealed class TrayApp : ApplicationContext
     {
         _settings = settings;
         _host = new BridgeHost(Logger.Log);
+        _updater = new Updater(Logger.Log);
 
         var menu = new ContextMenuStrip();
         menu.Items.Add(_s.Open, null, (_, _) => ShowSettings());
@@ -44,11 +48,19 @@ public sealed class TrayApp : ApplicationContext
             if (e.Button == MouseButtons.Left)
                 ShowSettings();
         };
+        _tray.BalloonTipClicked += (_, _) => ShowSettings();
 
         if (settings.Emulation)
             _host.Start(settings);
         _timer.Tick += (_, _) => Tick();
         _timer.Start();
+        // Update check shortly after start (the network may come up late after logon), then twice a day.
+        _updateTimer.Tick += async (_, _) =>
+        {
+            _updateTimer.Interval = (int)TimeSpan.FromHours(12).TotalMilliseconds;
+            await CheckUpdatesAsync();
+        };
+        _updateTimer.Start();
         if (showSettings)
             ShowSettings();
     }
@@ -70,7 +82,7 @@ public sealed class TrayApp : ApplicationContext
     {
         if (_form == null || _form.IsDisposed)
         {
-            _form = new MainForm(_settings, _host, on =>
+            _form = new MainForm(_settings, _host, _updater, on =>
             {
                 _settings.Save();
                 SetEmulation(on);
@@ -88,11 +100,23 @@ public sealed class TrayApp : ApplicationContext
             return;
         _exiting = true;
         _timer.Stop();
+        _updateTimer.Stop();
         _tray.Visible = false;
         _form?.Close();
         _host.Dispose();     // unplugs the virtual controller and gives the real one back to Steam
         _tray.Dispose();
         ExitThread();
+    }
+
+    async Task CheckUpdatesAsync()
+    {
+        if (!_settings.CheckUpdates)
+            return;
+        if (await _updater.CheckAsync() is { } release && release.Tag != _notifiedUpdate)
+        {
+            _notifiedUpdate = release.Tag;
+            _tray.ShowBalloonTip(8000, _s.UpdateTitle, string.Format(_s.UpdateText, release.Tag), ToolTipIcon.Info);
+        }
     }
 
     void Tick()

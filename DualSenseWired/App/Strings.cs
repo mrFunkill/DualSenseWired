@@ -23,6 +23,8 @@ public sealed class Strings
     public string Charging { get; private init; } = "charging";
     public string Full { get; private init; } = "charged";
     public string LowBatteryTitle { get; private init; } = "DualSense: low battery";
+    public string UpdateTitle { get; private init; } = "DualSense Wired: update available";
+    public string UpdateText { get; private init; } = "Version {0} is available. Open the app to update.";
     public string MissingUsbIp { get; private init; } = "usbip-win2 is not installed. It is needed for the virtual wired controller.";
 
     static Strings English() => new();
@@ -40,6 +42,8 @@ public sealed class Strings
         Charging = "заряжается",
         Full = "заряжен",
         LowBatteryTitle = "DualSense: низкий заряд",
+        UpdateTitle = "DualSense Wired: доступно обновление",
+        UpdateText = "Доступна версия {0}. Откройте приложение, чтобы обновить.",
         MissingUsbIp = "usbip-win2 не установлен. Он нужен для виртуального проводного контроллера.",
     };
 }
