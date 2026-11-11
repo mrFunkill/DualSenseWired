@@ -55,6 +55,7 @@ h1 .crumb{color:var(--faint);cursor:pointer;font-weight:600}
 h1 .crumb:hover{color:var(--text)}
 h1 .sep{color:var(--faint);font-weight:400}
 .page{display:none}.page.active{display:block}
+[hidden]{display:none!important}
 .card{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:16px 20px;margin-bottom:8px}
 .muted{color:var(--muted)}
 .notice{border-color:color-mix(in srgb,var(--warn) 45%,var(--border));color:var(--text)}
@@ -204,6 +205,8 @@ h1 .sep{color:var(--faint);font-weight:400}
       <div class="foot">
         <button class="linkbtn" id="themeBtn">◐ <span data-t="theme"></span></button>
         <button class="linkbtn" id="logBtn" data-t="openLog"></button>
+        <button class="linkbtn" id="checkUpdBtn" data-t="checkNow"></button>
+        <span id="checkUpdResult" hidden></span>
         <span id="version"></span>
       </div>
     </nav>
@@ -382,6 +385,8 @@ const $ = s => document.querySelector(s);
 const STR = {
   en: {
     navHome:'Home', navSettings:'Emulation settings', theme:'Theme', openLog:'Open log',
+    checkNow:'Check for updates', checking:'Checking…', upToDate:'You have the latest version',
+    checkAvailable:'An update is available', checkFailed:'Could not check for updates',
     emulation:'Wired connection emulation', emulationShort:'Emulation',
     emulationDesc:'Games see the controller as connected over USB: adaptive triggers, HD haptics and the speaker work.',
     stateActive:'Active', stateWaiting:'Waiting for the controller', stateOff:'Off',
@@ -408,7 +413,7 @@ const STR = {
     groupDpad:'D-pad',
     updateTitle:v=>`Version ${v} is available`, updateDesc:'The app closes for a moment while the update installs; the controller reconnects.',
     updateDownloading:'Downloading…', updateInstalling:'Installing…', updateFailed:'Update failed',
-    whatsNew:'What's new', updateNow:'Update',
+    whatsNew:'What’s new', updateNow:'Update',
     checkUpdates:'Check for updates', checkUpdatesDesc:'Looks for new releases on GitHub',
     names:{Cross:'Cross',Circle:'Circle',Square:'Square',Triangle:'Triangle',Up:'Up',Down:'Down',Left:'Left',Right:'Right',
       L1:'L1',R1:'R1',L2:'L2',R2:'R2',L3:'L3',R3:'R3',Create:'Create',Options:'Options',PS:'PS',Touchpad:'Touchpad click',Mute:'Mute',
@@ -417,6 +422,8 @@ const STR = {
   },
   ru: {
     navHome:'Главная', navSettings:'Настройки эмуляции', theme:'Тема', openLog:'Открыть журнал',
+    checkNow:'Проверить обновления', checking:'Проверка…', upToDate:'Установлена последняя версия',
+    checkAvailable:'Доступно обновление', checkFailed:'Не удалось проверить обновления',
     emulation:'Эмуляция проводного подключения', emulationShort:'Эмуляция',
     emulationDesc:'Игры видят геймпад как подключённый по USB: работают адаптивные триггеры, тактильная отдача и динамик.',
     stateActive:'Активна', stateWaiting:'Ожидание геймпада', stateOff:'Выключена',
@@ -638,6 +645,19 @@ $('#themeBtn').onclick=()=>{
   applyTheme(t); send({cmd:'set', key:'Theme', value:t});
 };
 $('#logBtn').onclick=()=>send({cmd:'openLog'});
+$('#checkUpdBtn').onclick=()=>{
+  const b=$('#checkUpdBtn'), r=$('#checkUpdResult');
+  b.disabled=true; r.hidden=false; r.textContent=T.checking;
+  send({cmd:'checkUpdate'});
+};
+let checkUpdTimer;
+function showUpdateCheck(result){
+  const r=$('#checkUpdResult');
+  $('#checkUpdBtn').disabled=false;
+  r.textContent=result==='available'?T.checkAvailable:result==='failed'?T.checkFailed:T.upToDate;
+  if(result==='available') go('home');
+  clearTimeout(checkUpdTimer); checkUpdTimer=setTimeout(()=>{r.hidden=true;},6000);
+}
 $('#updateBtn').onclick=()=>send({cmd:'update'});
 $('#updateNotes').onclick=()=>send({cmd:'openRelease'});
 
@@ -736,6 +756,7 @@ if(host){
       translate(); showSettings(m.settings, m.autostart); showState(m.state);
     } else if(m.type==='settings') showSettings(m.settings, m.autostart);
     else if(m.type==='state') showState(m.state);
+    else if(m.type==='updateCheck') showUpdateCheck(m.result);
     else if(m.type==='page') go(m.page);
   });
   send({cmd:'ready'});

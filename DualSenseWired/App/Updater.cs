@@ -26,6 +26,8 @@ public sealed class Updater
     public Release? Available { get; private set; }
     public string State { get; private set; } = "idle";     // idle, downloading, installing, failed
     public string? Error { get; private set; }
+    /// <summary>The last check could not reach GitHub or read its answer.</summary>
+    public bool CheckFailed { get; private set; }
 
     static HttpClient CreateClient()
     {
@@ -56,6 +58,7 @@ public sealed class Updater
                     best = new Release(version, tag, r.GetProperty("html_url").GetString() ?? "",
                                        asset.GetProperty("browser_download_url").GetString() ?? "", asset.GetProperty("size").GetInt64());
             }
+            CheckFailed = false;
             Available = best != null && best.Version > Current ? best : null;
             if (Available != null)
                 _log($"update available: {Available.Tag} (this is {Current})");
@@ -64,6 +67,7 @@ public sealed class Updater
         catch (Exception e) when (e is HttpRequestException or TaskCanceledException or JsonException or KeyNotFoundException or InvalidOperationException)
         {
             _log($"update check failed: {e.Message}");
+            CheckFailed = true;
             return null;
         }
     }

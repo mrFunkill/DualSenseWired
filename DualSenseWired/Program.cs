@@ -34,6 +34,10 @@ static class Program
             return 0;
 
         ApplicationConfiguration.Initialize();
+        // An unexpected error goes to the log with its stack trace (instead of only a .NET dialog
+        // without details); the app keeps running, as with "Continue" in that dialog.
+        Application.ThreadException += (_, e) => Logger.Log($"unhandled exception: {e.Exception}");
+        AppDomain.CurrentDomain.UnhandledException += (_, e) => Logger.Log($"fatal exception: {e.ExceptionObject}");
         if (!DescriptorsConsistent())
             return 1;
         if (!BridgeHost.UsbIpInstalled)

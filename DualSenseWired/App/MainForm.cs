@@ -41,11 +41,32 @@ public sealed class MainForm : Form
 
     async Task InitAsync()
     {
+        try
+        {
+            await InitWebViewAsync();
+        }
+        catch (Exception e) when (IsDisposed || e is ObjectDisposedException)
+        {
+            // Closed while WebView2 was still starting.
+        }
+        catch (Exception e)
+        {
+            Logger.Log($"settings window failed to start: {e}");
+            MessageBox.Show(this, e.Message, Strings.Current.AppName, MessageBoxButtons.OK, MessageBoxIcon.Error);
+        }
+    }
+
+    async Task InitWebViewAsync()
+    {
         // The app is installed under Program Files: keep WebView2's data in the user's profile.
         string data = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "DualSenseWired", "WebView2");
         var env = await CoreWebView2Environment.CreateAsync(null, data);
+        if (IsDisposed)
+            return;
         await _web.EnsureCoreWebView2Async(env);
-        var core = _web.CoreWebView2;
+        // The window may have been closed meanwhile: the control is then disposed and has no core.
+        if (IsDisposed || _web.CoreWebView2 is not { } core)
+            return;
         core.Settings.AreDevToolsEnabled = false;
         core.Settings.AreDefaultContextMenusEnabled = false;
         core.Settings.IsStatusBarEnabled = false;
@@ -58,8 +79,8 @@ public sealed class MainForm : Form
 
     void Post(object message)
     {
-        if (_ready && !IsDisposed)
-            _web.CoreWebView2.PostWebMessageAsJson(JsonSerializer.Serialize(message, Json));
+        if (_ready && !IsDisposed && _web.CoreWebView2 is { } core)
+            core.PostWebMessageAsJson(JsonSerializer.Serialize(message, Json));
     }
 
     object SettingsMessage() => new { type = "settings", settings = _settings, autostart = Autostart.Enabled };
@@ -157,6 +178,10 @@ public sealed class MainForm : Form
                     _ = _updater.InstallAsync().ContinueWith(_ => BeginInvoke(PostState));
                 PostState();
                 break;
+            case "checkUpdate":
+                // Manual check (works even with automatic checks turned off).
+                _ = CheckUpdateAsync();
+                break;
             case "openRelease":
                 if (_updater.Available is { } release)
                     System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(release.PageUrl) { UseShellExecute = true });
@@ -165,6 +190,18 @@ public sealed class MainForm : Form
                 System.Diagnostics.Process.Start("notepad.exe", $"\"{Logger.FilePath}\"");
                 break;
         }
+    }
+
+    async Task CheckUpdateAsync()
+    {
+        if (_updater.State is "downloading" or "installing")
+            return;
+        var release = await _updater.CheckAsync();
+        if (IsDisposed)
+            return;
+        string result = release != null ? "available" : _updater.CheckFailed ? "failed" : "latest";
+        Post(new { type = "updateCheck", result });
+        PostState();
     }
 
     void SetSetting(string? key, JsonNode? value)
