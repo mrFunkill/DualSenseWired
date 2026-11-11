@@ -3,7 +3,7 @@
 ; then compile this script with ISCC.exe.
 
 #define AppName "DualSense Wired"
-#define AppVersion "0.2.0"
+#define AppVersion "0.2.1"
 #define AppExe "DualSenseWired.exe"
 #define UsbIpSetup "USBip-0.9.8.1-x64.exe"
 #define HidHideSetup "HidHide_1.5.230_x64.exe"
