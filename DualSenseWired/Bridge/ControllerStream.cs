@@ -9,6 +9,12 @@
 //   type 0x11,  7 bytes: stream header "fe 30 30 30 30 30" + 8-bit counter
 //   type 0x12, 64 bytes: haptics, 32 stereo frames of signed 8-bit (3 kHz)
 //   type 0x13, 200 bytes: one Opus frame (stereo, 480 samples, CELT), zero padded
+//   type 0x16, 200 bytes: the same, played on the 3.5 mm jack (headphones plugged in)
+//
+// Ported from the plugin up to its v0.5.3: buffer length in the stream header, Opus encoding of
+// silence while streaming, headphone jack, game output as separate reports ("fast triggers") and
+// the controller microphone (stream header flag; the mute button is handled here, as a wired
+// controller's host does). Fields and layouts were identified in the open DS5Dongle project.
 //
 // The controller plays one report per 32 haptics frames at 3 kHz = 10.667 ms, so its audio runs at
 // 480 samples per 10.667 ms = 45 kHz: the host's 48 kHz audio is resampled to 45 kHz and fed to the
@@ -31,7 +37,7 @@ public sealed class ControllerStream : IDisposable
         [0x37] = 462, [0x38] = 526, [0x39] = 547,
     };
 
-    const byte SubSettings = 0x10, SubStream = 0x11, SubHaptics = 0x12, SubOpus = 0x13;
+    const byte SubSettings = 0x10, SubStream = 0x11, SubHaptics = 0x12, SubOpus = 0x13, SubOpusHeadphones = 0x16;
     const byte SubPresent = 0x80, SubTwoBlocks = 0x40;
     const int SettingsSize = 63;
     const int HapticsBlock = 64;                 // 32 stereo frames, int8
@@ -62,6 +68,12 @@ public sealed class ControllerStream : IDisposable
     const int MaxQueue = 24;
     // Byte 65 of the Bluetooth input report: how much audio the controller has buffered (ms).
     public const int InputAudioLevelOffset = 65;
+    // Bluetooth input report 0x31: byte 55 bit 0 = headphones plugged in; byte 11 bit 2 = mute button.
+    const int InputPlugOffset = 55;
+    const int InputMuteOffset = 11;
+    const byte InputMuteBit = 0x04;
+    const byte StreamFlagMic = 0x01;            // stream header: the controller sends its microphone
+    public const int MinTargetLevel = 16, MaxTargetLevel = 56;
     public const int DefaultTargetLevel = 32;    // DSX's default is 48 ms
     const int LevelLowMargin = 12;
     const int LevelHighMargin = 12;              // the controller drops its whole buffer at ~64+
@@ -94,6 +106,11 @@ public sealed class ControllerStream : IDisposable
     int _seq;
     long _dropped, _stalls, _underruns, _inputFrames;
     int _loggedOutputs;
+    byte? _gameAudioControl;                    // the game's audio routing (separate outputs)
+    volatile bool _headphones;
+    bool _mutePressed;
+    volatile bool _micMuted;
+    volatile bool _micStatePending;
 
     /// <summary>Controller speaker volume (0..0x7F); the host's volume control scales the audio itself.</summary>
     public int Volume { get; set; } = 0x7F * 80 / 100;
@@ -110,6 +127,17 @@ public sealed class ControllerStream : IDisposable
     long _reportsSent;
     /// <summary>Haptics strength, 1 = as the game plays it.</summary>
     public double HapticsGain { get; set; } = 1;
+    /// <summary>
+    /// Game output (triggers, LEDs) as its own report right after an audio report ("fast triggers"):
+    /// inside an audio report the controller seems to apply it only when that audio plays, a buffer later.
+    /// </summary>
+    public bool SeparateOutputs { get; set; } = true;
+    /// <summary>The controller sends its microphone (extra input reports, see MicrophoneStream).</summary>
+    public bool MicEnabled { get; set; }
+    /// <summary>The microphone is muted with the controller's mute button.</summary>
+    public bool MicMuted => _micMuted;
+    /// <summary>Headphones are plugged into the controller: audio goes to the 3.5 mm jack.</summary>
+    public bool Headphones => _headphones;
 
     public ControllerStream(Action<string> log)
     {
@@ -133,13 +161,39 @@ public sealed class ControllerStream : IDisposable
     }
 
     /// <summary>Common part (47 bytes) of a game output report, sent with the next report.</summary>
-    public void SubmitOutput(ReadOnlySpan<byte> common) => _gameOutput.Update(common);
+    public void SubmitOutput(ReadOnlySpan<byte> common)
+    {
+        if (MicEnabled && (common[1] & 0x03) != 0)
+        {
+            // We own the microphone mute and its LED (the mute button toggles them); a game setting
+            // them too would undo that.
+            var copy = common.ToArray();
+            copy[1] &= unchecked((byte)~0x03);
+            _gameOutput.Update(copy);
+            return;
+        }
+        _gameOutput.Update(common);
+    }
 
-    /// <summary>The controller's audio buffer level from a Bluetooth input report.</summary>
+    /// <summary>A Bluetooth input report with controller state: audio buffer level, headphones, mute button.</summary>
     public void InputReport(byte[] btReport)
     {
-        if (btReport.Length > InputAudioLevelOffset && btReport[0] == DualSenseProtocol.BtInputReport)
-            _level = btReport[InputAudioLevelOffset];
+        if (btReport.Length <= InputAudioLevelOffset || btReport[0] != DualSenseProtocol.BtInputReport)
+            return;
+        _level = btReport[InputAudioLevelOffset];
+        bool pressed = (btReport[InputMuteOffset] & InputMuteBit) != 0;
+        if (pressed && !_mutePressed && MicEnabled)
+        {
+            _micMuted = !_micMuted;
+            _micStatePending = true;
+        }
+        _mutePressed = pressed;
+        bool headphones = (btReport[InputPlugOffset] & 0x01) != 0;
+        if (headphones != _headphones)
+        {
+            _headphones = headphones;
+            _log(headphones ? "headphones plugged in: audio goes to the 3.5 mm jack" : "headphones unplugged: audio goes to the controller speaker");
+        }
     }
 
     public void SpeakerVolume(bool mute, double decibels) =>
@@ -216,7 +270,47 @@ public sealed class ControllerStream : IDisposable
         return report;
     }
 
-    static byte[] StreamHeader(int counter) => new byte[] { 0xFE, 0x30, 0x30, 0x30, 0x30, 0x30, (byte)counter };
+    /// <summary>
+    /// 0x11 block: flags, then the controller's audio buffer length in ms (DSX sends 0x30 = 48), then a
+    /// packet counter. The controller keeps this much audio queued: less is less delay, more fewer gaps.
+    /// </summary>
+    byte[] StreamHeader(int counter)
+    {
+        byte b = (byte)Math.Clamp(TargetLevel, MinTargetLevel, MaxTargetLevel);
+        byte flags = (byte)(0xFE | (MicEnabled ? StreamFlagMic : 0));
+        return new byte[] { flags, b, b, b, b, b, (byte)counter };
+    }
+
+    byte OpusBlock => _headphones ? SubOpusHeadphones : SubOpus;
+
+    /// <summary>Turns the controller microphone on or off without audio (a header-only 0x32 report).</summary>
+    static byte[] MicStatusReport(int seq, bool enabled) =>
+        BuildReport(0x32, seq, (SubStream, new[] { new byte[] { (byte)(enabled ? 0x03 : 0x02) } }));
+
+    /// <summary>
+    /// Common output part that (un)mutes the controller microphone and sets the mute button LED (over a
+    /// cable the host does this when the button is pressed), with mic volume and automatic mic selection.
+    /// </summary>
+    static byte[] MicMuteState(bool muted)
+    {
+        var common = new byte[DualSenseProtocol.CommonSize];
+        common[0] = 0x40 | 0x80;            // microphone volume, audio control
+        common[1] = 0x01 | 0x02;            // mute LED, mute control
+        common[6] = 0x40;                   // microphone volume (the controller tops out at ~64)
+        common[7] = 0x08;                   // audio control: mic auto select (headset mic first)
+        common[8] = (byte)(muted ? 0x01 : 0x00);   // mute LED
+        common[9] = (byte)(muted ? 0x10 : 0x00);   // mute control: microphone muted
+        return common;
+    }
+
+    /// <summary>Mute button LED only (turned off with the microphone).</summary>
+    static byte[] MuteLedState(bool on)
+    {
+        var common = new byte[DualSenseProtocol.CommonSize];
+        common[1] = 0x01;
+        common[8] = (byte)(on ? 0x01 : 0x00);
+        return common;
+    }
 
     /// <summary>Settings block: audio fields from us, everything else from the game (if it sent anything).</summary>
     byte[] Settings()
@@ -230,6 +324,15 @@ public sealed class ControllerStream : IDisposable
         block[37] = 0x0A;                       // constant in captures
         block[41] = 0x02;                       // lightbar setup (as observed)
         block[46] = 0xFF;
+        if (SeparateOutputs)
+        {
+            // The audio fields repeat in every audio report: keep the game's audio routing.
+            if (_gameAudioControl is { } control)
+                block[7] = control;
+            else if (MicEnabled)
+                block[7] = 0x08;                // microphone: automatic selection (a headset mic first)
+            return block;
+        }
         var game = _gameOutput.Take();
         if (game != null)
         {
@@ -243,6 +346,46 @@ public sealed class ControllerStream : IDisposable
             block[7] = audioControl;
         }
         return block;
+    }
+
+    /// <summary>
+    /// Game output as its own 0x31 report right after an audio report, at most one per audio report,
+    /// so the link carries no more than twice the audio report rate.
+    /// </summary>
+    void SendGameOutput(HidDevice device)
+    {
+        if (!SeparateOutputs || _gameOutput.Take() is not { } game)
+            return;
+        if ((game[0] & 0x80) != 0)
+            _gameAudioControl = game[7];
+        // Same rule as inside the stream: no "rumble instead of haptics", no LED release.
+        game[0] &= unchecked((byte)~StreamBlockedFlag0);
+        game[1] &= unchecked((byte)~StreamBlockedFlag1);
+        if (game[0] == 0 && game[1] == 0 && game[38] == 0)
+            return;
+        Write(device, DualSenseProtocol.CommonToBt(game, _seq++));
+    }
+
+    /// <summary>The microphone switch and the mute state (pending after a mute button press).</summary>
+    void MicControls(HidDevice device, ref bool micSent)
+    {
+        bool mic = MicEnabled;
+        if (mic != micSent)
+        {
+            // Audio reports carry the flag too; this covers silence (no audio reports).
+            Write(device, MicStatusReport(_seq++, mic));
+            micSent = mic;
+            _micMuted = false;
+            _micStatePending = true;
+            _log($"controller microphone {(mic ? "on" : "off")}");
+        }
+        if (_micStatePending)
+        {
+            _micStatePending = false;
+            Write(device, DualSenseProtocol.CommonToBt(mic ? MicMuteState(_micMuted) : MuteLedState(false), _seq++));
+            if (mic)
+                _log($"controller microphone {(_micMuted ? "muted" : "live")}");
+        }
     }
 
     // -- encoding --
@@ -259,15 +402,16 @@ public sealed class ControllerStream : IDisposable
         OpusSilence.CopyTo(opus, 0);
         if (frame == null)
             return (opus, haptics);
-        bool speakerSound = false, hapticsSignal = false;
+        bool hapticsSignal = false;
         for (int i = 0; i < OpusFrameSamples; i++)
         {
             _speaker[2 * i] = frame[Channels * i];
             _speaker[2 * i + 1] = frame[Channels * i + 1];
-            speakerSound |= frame[Channels * i] != 0 || frame[Channels * i + 1] != 0;
             hapticsSignal |= frame[Channels * i + 2] != 0 || frame[Channels * i + 3] != 0;
         }
-        if (speakerSound)
+        // Silence is encoded too while the stream runs: an encoder that skipped frames continues from
+        // stale state when sound comes back, heard as a click or squeak.
+        if (SpeakerEnabled)
         {
             int n = _encoder.Encode(_speaker, OpusFrameSamples, _opusOut, _opusOut.Length);
             if (n > 0 && n <= OpusFrameBytes)
@@ -381,8 +525,11 @@ public sealed class ControllerStream : IDisposable
         var lastAudible = -StreamHold - StreamHold;
         var nextStats = _clock.Elapsed + StatsPeriod;
         int doubles = 0, skips = 0, sent = 0, minLevel = int.MaxValue, maxLevel = 0;
+        int queueMin = int.MaxValue, queueMax = 0, queueSamples = 0;
+        long queueSum = 0;
         long lastDropped = 0, lastUnderruns = 0;
         HidDevice? lastDevice = null;
+        bool micSent = false;
 
         while (!_stop)
         {
@@ -392,6 +539,8 @@ public sealed class ControllerStream : IDisposable
                 lastDevice = device;
                 smoothed = null;
                 primed = false;
+                micSent = false;        // a reconnected controller starts with its microphone off
+                _gameAudioControl = null;
             }
             int level = _level;
             if (level >= 0)
@@ -415,6 +564,14 @@ public sealed class ControllerStream : IDisposable
                 // Catch up only while our own queue keeps a reserve.
                 if (frame != null && low && _queue.Count >= 2)
                     frame2 = _queue.Dequeue();
+                if (frame != null)
+                {
+                    int queued = _queue.Count;
+                    queueMin = Math.Min(queueMin, queued);
+                    queueMax = Math.Max(queueMax, queued);
+                    queueSum += queued;
+                    queueSamples++;
+                }
             }
 
             var now = _clock.Elapsed;
@@ -428,7 +585,13 @@ public sealed class ControllerStream : IDisposable
                 primed = false;
             }
             if (!idle && !streaming)
+            {
                 _log("audio stream to the controller started");
+                // A new stream after a pause: the encoder and the haptics filter start clean (the
+                // controller's decoder starts fresh too).
+                _encoder.ResetState();
+                _hapticsY[0] = _hapticsY[1] = 0;
+            }
             else if (idle && streaming && device != null)
             {
                 _log("audio stream to the controller paused (silence)");
@@ -441,6 +604,9 @@ public sealed class ControllerStream : IDisposable
             double late = now.TotalSeconds - (start + tick * Period);
             if (late > ResyncLateness)
                 start = now.TotalSeconds - tick * Period;     // after a stall: carry on, don't burst
+
+            if (device != null && now >= _backoffUntil)
+                MicControls(device, ref micSent);
 
             if (device == null)
             {
@@ -460,6 +626,7 @@ public sealed class ControllerStream : IDisposable
             {
                 skips++;            // the controller has too much queued: drop this frame
                 lastAdjust = tick;
+                SendGameOutput(device);
             }
             else if (frame2 != null)
             {
@@ -467,8 +634,9 @@ public sealed class ControllerStream : IDisposable
                 var (o1, h1) = Encode(frame);
                 var (o2, h2) = Encode(frame2);
                 Write(device, BuildReport(0x39, _seq, (SubStream, new[] { StreamHeader(_seq) }),
-                                          (SubOpus, new[] { o1, o2 }), (SubHaptics, new[] { h1, h2 })));
+                                          (OpusBlock, new[] { o1, o2 }), (SubHaptics, new[] { h1, h2 })));
                 _seq++;
+                SendGameOutput(device);
                 doubles++;
                 sent++;
                 Interlocked.Increment(ref _reportsSent);
@@ -477,8 +645,9 @@ public sealed class ControllerStream : IDisposable
             {
                 var (opus, haptics) = Encode(frame);
                 Write(device, BuildReport(0x36, _seq, (SubSettings, new[] { Settings() }), (SubStream, new[] { StreamHeader(_seq) }),
-                                          (SubOpus, new[] { opus }), (SubHaptics, new[] { haptics })));
+                                          (OpusBlock, new[] { opus }), (SubHaptics, new[] { haptics })));
                 _seq++;
+                SendGameOutput(device);
                 sent++;
                 Interlocked.Increment(ref _reportsSent);
             }
@@ -487,14 +656,17 @@ public sealed class ControllerStream : IDisposable
             {
                 if (sent > 0)
                 {
-                    int queued;
-                    lock (_queueLock)
-                        queued = _queue.Count;
+                    // Our own queue per period: in steady playback it holds about one frame, so the
+                    // delay is mostly the controller's buffer setting.
+                    string queue = queueSamples > 0 ? $"{queueMin}..{queueMax} avg {(double)queueSum / queueSamples:0.0}" : "?";
                     _log($"audio stream: {sent} reports, controller buffer " +
                          (maxLevel > 0 ? $"{minLevel}..{maxLevel}" : "?") +
                          $" ms, doubles {doubles}, skipped {skips}, underruns +{_underruns - lastUnderruns}, " +
-                         $"dropped +{_dropped - lastDropped}, stalls {_stalls}, queue {queued}, host audio {Interlocked.Read(ref _inputFrames) / StatsPeriod.TotalSeconds:0} frames/s");
+                         $"dropped +{_dropped - lastDropped}, stalls {_stalls}, queue {queue}, host audio {Interlocked.Read(ref _inputFrames) / StatsPeriod.TotalSeconds:0} frames/s");
                 }
+                queueMin = int.MaxValue;
+                queueMax = queueSamples = 0;
+                queueSum = 0;
                 Interlocked.Exchange(ref _inputFrames, 0);
                 lastDropped = _dropped;
                 lastUnderruns = _underruns;
@@ -512,6 +684,12 @@ public sealed class ControllerStream : IDisposable
         var last = _device;
         if (last != null && streaming)
             Write(last, BuildReport(0x32, _seq++, (SubSettings, new[] { Settings() }), (SubHaptics, new[] { new byte[HapticsBlock] })));
+        if (last != null && micSent)
+        {
+            // Leave the controller's microphone off and its mute LED dark.
+            Write(last, MicStatusReport(_seq++, false));
+            Write(last, DualSenseProtocol.CommonToBt(MuteLedState(false), _seq++));
+        }
     }
 
     public void Dispose()

@@ -22,6 +22,8 @@ public interface IControllerLink
     void AudioOut(ReadOnlySpan<byte> pcm);
     /// <summary>The host's volume control for the audio output (master mute and volume in dB).</summary>
     void SpeakerVolume(bool mute, double decibels);
+    /// <summary>Microphone audio for the host: stereo 16-bit 48 kHz frames (silence when there is none).</summary>
+    void MicrophoneIn(Span<byte> pcm);
 }
 
 public sealed class VirtualDualSense : IUsbDevice
@@ -136,7 +138,7 @@ public sealed class VirtualDualSense : IUsbDevice
     async Task<UrbResult> AudioInAsync(Urb urb)
     {
         await PaceIsoAsync(urb);
-        // Microphone: silence, 48 frames per 1 ms packet.
+        // Microphone: 48 frames per 1 ms packet, from the controller's microphone when it is on.
         int perPacket = SampleRate / 1000 * AudioInFrameBytes;
         var packets = new IsoPacket[urb.IsoPackets.Length];
         int total = 0;
@@ -146,7 +148,9 @@ public sealed class VirtualDualSense : IUsbDevice
             packets[i] = urb.IsoPackets[i] with { ActualLength = len, Status = 0 };
             total += len;
         }
-        return new UrbResult { InData = new byte[total], ActualLength = total, IsoPackets = packets };
+        var data = new byte[total];
+        _link.MicrophoneIn(data);
+        return new UrbResult { InData = data, ActualLength = total, IsoPackets = packets };
     }
 
     // -- control endpoint --

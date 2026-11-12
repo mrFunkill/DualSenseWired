@@ -16,8 +16,11 @@ This is the Windows version of the Steam Deck plugin
 - Audio and haptics go to the controller over Bluetooth, as do adaptive triggers, the lightbar
   and regular rumble.
 - The Bluetooth controller is hidden from Steam and games (HidHide), so there is only one controller.
+- Headphones in the controller's 3.5 mm jack: audio goes to them automatically.
+- The controller's microphone (or a headset's) as the wired DualSense's microphone in Windows; the
+  mute button turns it off (enabled in the settings).
 - Settings: speaker volume, haptics strength, audio buffer (delay vs. robustness), adaptive
-  triggers on/off.
+  triggers, "fast triggers" (triggers and lightbar don't wait for the audio stream), microphone.
 - Layout: remap or disable buttons, swap sticks, dead zones, inverted right stick Y.
 - Battery level, low battery warning, tray icon, start with Windows.
 - English and Russian interface (follows Windows), light and dark theme.
@@ -59,7 +62,6 @@ If DSX is running, close it: two apps cannot drive the controller at the same ti
 ## Limitations
 
 - One controller at a time.
-- The controller's microphone and headphone jack are not supported over Bluetooth.
 - Keyboard and mouse actions in the layout are planned.
 
 ## Uninstalling

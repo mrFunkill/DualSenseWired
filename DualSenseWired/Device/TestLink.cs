@@ -72,6 +72,8 @@ public sealed class TestLink : IControllerLink
 
     public void SpeakerVolume(bool mute, double decibels) => _log($"speaker volume {decibels:0.#} dB{(mute ? ", muted" : "")}");
 
+    public void MicrophoneIn(Span<byte> pcm) => pcm.Clear();
+
     void LogStats()
     {
         long bytes = Interlocked.Exchange(ref _audioBytes, 0);

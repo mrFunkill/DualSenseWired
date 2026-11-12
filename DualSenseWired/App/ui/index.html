@@ -336,6 +336,18 @@ h1 .sep{color:var(--faint);font-weight:400}
         </div>
         <div class="card section">
           <div class="row-head">
+            <div><div data-t="fastTriggers"></div><div class="desc" data-t="fastTriggersDesc"></div></div>
+            <label class="check"><input type="checkbox" id="fastTrg" data-setting="FastTriggers"></label>
+          </div>
+        </div>
+        <div class="card section">
+          <div class="row-head">
+            <div><div data-t="mic"></div><div class="desc" data-t="micDesc"></div></div>
+            <label class="check"><input type="checkbox" id="micToggle" data-setting="Microphone"></label>
+          </div>
+        </div>
+        <div class="card section">
+          <div class="row-head">
             <div><div data-t="lowBattery"></div><div class="desc" data-t="lowBatteryDesc"></div></div>
             <label class="check"><input type="checkbox" id="lowBat" data-setting="LowBatteryNotifications"></label>
           </div>
@@ -406,6 +418,9 @@ const STR = {
     buffer:'Controller audio buffer', bufferHint:'Less: less delay. More: fewer dropouts on a busy Bluetooth link.',
     audioHint:'Games send speaker sounds and HD haptics to "DualSense Wireless Controller" by themselves. Keep your speakers or headphones as the default Windows device.',
     triggers:'Adaptive triggers', triggersDesc:'Pass L2/R2 resistance effects from games',
+    fastTriggers:'Fast triggers', fastTriggersDesc:'Triggers and lightbar are sent right away, not inside the audio stream. Turn off if the controller disconnects',
+    mic:'Controller microphone', micDesc:'The controller’s microphone (or a headset’s) as the microphone of the wired controller in Windows. The mute button turns it off. Adds Bluetooth traffic',
+    headphones:'headphones', micLive:'microphone on', micMuted:'microphone muted',
     lowBattery:'Low battery warnings', lowBatteryDesc:'A notification at 20% and 10%',
     autostart:'Start with Windows', autostartDesc:'The app starts in the tray',
     reset:'Reset', current:'Now', asPad:'As on the controller', disable:'Disable', close:'Close', disabled:'Disabled',
@@ -443,6 +458,9 @@ const STR = {
     buffer:'Буфер звука в контроллере', bufferHint:'Меньше — меньше задержка, больше — меньше прерываний звука.',
     audioHint:'Игры сами выводят звуки динамика и HD-вибрацию на «DualSense Wireless Controller». Устройством по умолчанию в Windows оставьте колонки или наушники.',
     triggers:'Адаптивные триггеры', triggersDesc:'Передавать эффекты сопротивления L2/R2 из игры',
+    fastTriggers:'Быстрые триггеры', fastTriggersDesc:'Триггеры и подсветка отправляются сразу, а не внутри звукового потока. Выключите, если геймпад отключается',
+    mic:'Микрофон геймпада', micDesc:'Микрофон геймпада (или гарнитуры в нём) как микрофон проводного геймпада в Windows. Кнопка mute выключает его. Добавляет нагрузку на Bluetooth',
+    headphones:'наушники', micLive:'микрофон включён', micMuted:'микрофон выключен',
     lowBattery:'Предупреждать о низком заряде', lowBatteryDesc:'Уведомление при 20% и 10%',
     autostart:'Запускать вместе с Windows', autostartDesc:'Приложение запустится в трее',
     reset:'Сбросить', current:'Сейчас', asPad:'Как на геймпаде', disable:'Отключить', close:'Закрыть', disabled:'Отключено',
@@ -704,7 +722,7 @@ function showSettings(s, autostart){
   $('#vibToggle').checked=s.Haptics; $('#vib').value=s.HapticsGain;
   let bi=BUF.findIndex(v=>v>=s.Latency); $('#buf').value=bi<0?BUF.length-1:bi;
   $('#chkUpd').checked=s.CheckUpdates;
-  $('#trgToggle').checked=s.AdaptiveTriggers; $('#lowBat').checked=s.LowBatteryNotifications;
+  $('#trgToggle').checked=s.AdaptiveTriggers; $('#fastTrg').checked=s.FastTriggers; $('#micToggle').checked=s.Microphone; $('#lowBat').checked=s.LowBatteryNotifications;
   $('#dzl').value=s.DeadzoneLeft; $('#dzr').value=s.DeadzoneRight; $('#invY').checked=s.InvertRightY;
   $('#emuToggle').checked=s.Emulation;
   $('#autostart').checked=autostart;
@@ -744,7 +762,8 @@ function showState(st){
     $('#battNote').textContent=b.full?T.full:b.charging?T.charging:T.discharging;
   }
   $('#audioStat').hidden=!st.connected;
-  $('#audioText').textContent=st.audio?T.audioPlaying:T.audioIdle;
+  $('#audioText').textContent=[st.audio?T.audioPlaying:T.audioIdle, st.headphones?T.headphones:null,
+    st.mic==='live'?T.micLive:st.mic==='muted'?T.micMuted:null].filter(Boolean).join(' · ');
 }
 
 if(host){

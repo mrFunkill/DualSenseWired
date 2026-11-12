@@ -55,7 +55,9 @@ public sealed class BridgeHost : IDisposable
         stream.Volume = Math.Clamp(settings.Volume, 0, 100) * 0x7F / 100;
         stream.HapticsEnabled = settings.Haptics;
         stream.HapticsGain = settings.HapticsGain / 100.0;
-        stream.TargetLevel = Math.Clamp(settings.Latency, 16, 56);
+        stream.TargetLevel = Math.Clamp(settings.Latency, ControllerStream.MinTargetLevel, ControllerStream.MaxTargetLevel);
+        stream.SeparateOutputs = settings.FastTriggers;
+        link.Microphone = settings.Microphone;
         link.ButtonMap = settings.BuildButtonMap();
         link.AdaptiveTriggers = settings.AdaptiveTriggers;
     }

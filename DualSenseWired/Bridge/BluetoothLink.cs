@@ -21,6 +21,7 @@ public sealed class BluetoothLink : IControllerLink, IDisposable
         new BoundedChannelOptions(1) { FullMode = BoundedChannelFullMode.DropOldest });
     readonly OutputState _history = new();     // everything the game set, re-sent after a reconnect
     readonly ControllerStream _stream;
+    readonly MicrophoneStream _mic = new();
     readonly object _deviceLock = new();
     HidDevice? _device;
     readonly HashSet<string> _hidden = new();      // instance IDs we hid with HidHide
@@ -151,6 +152,7 @@ public sealed class BluetoothLink : IControllerLink, IDisposable
             finally
             {
                 _stream.Device = null;
+                _mic.Reset();
                 lock (_deviceLock)
                     _device = null;
                 device.Dispose();
@@ -165,6 +167,13 @@ public sealed class BluetoothLink : IControllerLink, IDisposable
         while (!ct.IsCancellationRequested)
         {
             byte[] report = await device.ReadAsync(ct);
+            if (MicrophoneStream.IsMicReport(report))
+            {
+                // Microphone audio, not controller state (sent only while the microphone is on).
+                if (_stream.MicEnabled)
+                    _mic.Feed(report);
+                continue;
+            }
             Interlocked.Increment(ref _btReports);
             _stream.InputReport(report);
             var usb = DualSenseProtocol.BtInputToUsb(report);
@@ -259,6 +268,27 @@ public sealed class BluetoothLink : IControllerLink, IDisposable
 
     public void AudioOut(ReadOnlySpan<byte> pcm) => _stream.AudioIn(pcm);
 
+    public void MicrophoneIn(Span<byte> pcm)
+    {
+        if (_stream.MicEnabled && Connected)
+            _mic.Read(pcm);
+        else
+            pcm.Clear();
+    }
+
+    /// <summary>The controller microphone as the virtual controller's microphone (Bluetooth traffic).</summary>
+    public bool Microphone
+    {
+        get => _stream.MicEnabled;
+        set
+        {
+            if (_stream.MicEnabled == value)
+                return;
+            _mic.Reset();
+            _stream.MicEnabled = value;
+        }
+    }
+
     public void SpeakerVolume(bool mute, double decibels)
     {
         _stream.SpeakerVolume(mute, decibels);
@@ -291,7 +321,8 @@ public sealed class BluetoothLink : IControllerLink, IDisposable
             var writes = _stream.TakeWriteStats();
             if (Connected)
                 _log($"controller reports {bt}, delivered {delivered}, game outputs {outputs} in 10 s; {_lag.TakeSummary()}; " +
-                     $"writes to controller {writes.Count}, avg {writes.AvgMs:0.0} ms, max {writes.MaxMs:0.0} ms");
+                     $"writes to controller {writes.Count}, avg {writes.AvgMs:0.0} ms, max {writes.MaxMs:0.0} ms" +
+                     (_stream.MicEnabled ? "; " + _mic.TakeSummary() : ""));
         }
     }
 

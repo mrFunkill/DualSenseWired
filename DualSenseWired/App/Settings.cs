@@ -18,6 +18,10 @@ public sealed class Settings
     public bool LowBatteryNotifications { get; set; } = true;
     public bool CheckUpdates { get; set; } = true;
     public bool AdaptiveTriggers { get; set; } = true;
+    /// <summary>Triggers and lightbar as their own reports, not inside the audio stream ("fast triggers").</summary>
+    public bool FastTriggers { get; set; } = true;
+    /// <summary>The controller microphone (or a headset's) as the virtual controller's microphone.</summary>
+    public bool Microphone { get; set; }
     public int DeadzoneLeft { get; set; }               // % of the stick's travel
     public int DeadzoneRight { get; set; }
     public bool InvertRightY { get; set; }

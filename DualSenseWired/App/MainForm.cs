@@ -99,6 +99,8 @@ public sealed class MainForm : Form
             model = link?.ProductId == 0x0DF2 ? "DualSense Edge" : "DualSense",
             battery = battery is { } b ? new { percent = b.Percent, charging = b.Charging, full = b.Full } : null,
             audio = connected && link!.Stream.Streaming,
+            headphones = connected && link!.Stream.Headphones,
+            mic = connected && link!.Microphone ? (link.Stream.MicMuted ? "muted" : "live") : null,
             hidhideMissing = Hid.HidHide.CliPath == null,
             update = _updater.Available is { } u
                 ? new { version = u.Tag, url = u.PageUrl, state = _updater.State, error = _updater.Error }
@@ -169,6 +171,8 @@ public sealed class MainForm : Form
                 _settings.HapticsGain = defaults.HapticsGain;
                 _settings.Latency = defaults.Latency;
                 _settings.AdaptiveTriggers = defaults.AdaptiveTriggers;
+                _settings.FastTriggers = defaults.FastTriggers;
+                _settings.Microphone = defaults.Microphone;
                 _settings.LowBatteryNotifications = defaults.LowBatteryNotifications;
                 Changed();
                 Post(SettingsMessage());
@@ -213,6 +217,8 @@ public sealed class MainForm : Form
             case nameof(Settings.Speaker): _settings.Speaker = value.GetValue<bool>(); break;
             case nameof(Settings.Haptics): _settings.Haptics = value.GetValue<bool>(); break;
             case nameof(Settings.AdaptiveTriggers): _settings.AdaptiveTriggers = value.GetValue<bool>(); break;
+            case nameof(Settings.FastTriggers): _settings.FastTriggers = value.GetValue<bool>(); break;
+            case nameof(Settings.Microphone): _settings.Microphone = value.GetValue<bool>(); break;
             case nameof(Settings.LowBatteryNotifications): _settings.LowBatteryNotifications = value.GetValue<bool>(); break;
             case nameof(Settings.CheckUpdates): _settings.CheckUpdates = value.GetValue<bool>(); break;
             case nameof(Settings.InvertRightY): _settings.InvertRightY = value.GetValue<bool>(); break;
